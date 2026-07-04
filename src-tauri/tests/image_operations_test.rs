@@ -111,6 +111,10 @@ fn test_thumbnail_grid_calculation() {
 
     for (container, expected) in container_widths.iter().zip(expected_columns.iter()) {
         let columns = container / item_width;
-        assert_eq!(columns, *expected as usize, "Failed for width {}", container);
+        assert_eq!(
+            columns, *expected as usize,
+            "Failed for width {}",
+            container
+        );
     }
 }

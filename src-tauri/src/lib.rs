@@ -1,13 +1,9 @@
+use image::ImageReader;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use image::ImageReader;
-use tauri::{command, Manager, State, WebviewWindow};
-
-#[cfg(target_os = "macos")]
-use tauri::Emitter;
+use tauri::{command, Emitter, Manager, State, WebviewWindow};
 
 // ウィンドウごとの状態
 #[derive(Clone, Default)]
@@ -20,8 +16,6 @@ struct WindowState {
 #[derive(Default)]
 struct AppState {
     windows: Mutex<HashMap<String, WindowState>>,
-    #[cfg(target_os = "macos")]
-    next_window_id: Mutex<usize>,
     pending_paths: Mutex<Vec<PathBuf>>,
     thumbnail_cache: Mutex<HashMap<PathBuf, PathBuf>>,
 }
@@ -40,7 +34,7 @@ fn load_image(
     window: WebviewWindow,
     path: String,
     state: State<AppState>,
-) -> Result<String, String> {
+) -> Result<ImageInfo, String> {
     let path = PathBuf::from(&path);
 
     // Get image dimensions and file size
@@ -52,9 +46,7 @@ fn load_image(
     let width = img.width();
     let height = img.height();
 
-    let size = std::fs::metadata(&path)
-        .map_err(|e| e.to_string())?
-        .len();
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
 
     // Get parent directory
     let parent = path.parent().ok_or("No parent directory")?;
@@ -70,7 +62,7 @@ fn load_image(
                 .map(|ext| {
                     matches!(
                         ext.to_lowercase().as_str(),
-                        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "tiff"
                     )
                 })
                 .unwrap_or(false)
@@ -82,7 +74,8 @@ fn load_image(
     // Find current image index
     let index = images.iter().position(|p| p == &path).unwrap_or(0);
 
-    let images_str: Vec<String> = images.iter()
+    let images_str: Vec<String> = images
+        .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
@@ -159,7 +152,8 @@ fn first_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<S
     let window_label = window.label().to_string();
     let mut windows = state.windows.lock().unwrap();
 
-    let window_state = windows.get_mut(&window_label)
+    let window_state = windows
+        .get_mut(&window_label)
         .ok_or("Window state not found")?;
 
     if window_state.current_images.is_empty() {
@@ -167,7 +161,11 @@ fn first_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<S
     }
 
     window_state.current_index = 0;
-    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
 }
 
 #[command]
@@ -175,7 +173,8 @@ fn last_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<St
     let window_label = window.label().to_string();
     let mut windows = state.windows.lock().unwrap();
 
-    let window_state = windows.get_mut(&window_label)
+    let window_state = windows
+        .get_mut(&window_label)
         .ok_or("Window state not found")?;
 
     if window_state.current_images.is_empty() {
@@ -183,7 +182,11 @@ fn last_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<St
     }
 
     window_state.current_index = window_state.current_images.len() - 1;
-    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
 }
 
 #[command]
@@ -199,9 +202,7 @@ fn get_image_info(path: String) -> Result<ImageInfo, String> {
     let width = img.width();
     let height = img.height();
 
-    let size = std::fs::metadata(&path)
-        .map_err(|e| e.to_string())?
-        .len();
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
 
     Ok(ImageInfo {
         width,
@@ -283,6 +284,10 @@ pub fn run() {
             load_image,
             next_image,
             previous_image,
+            first_image,
+            last_image,
+            get_image_info,
+            get_thumbnail,
             frontend_ready
         ])
         .setup(|app| {
@@ -340,37 +345,6 @@ pub fn run() {
                         let path_str = path.to_string_lossy().to_string();
                         println!("[Rust] Window exists, emitting immediately: {}", path_str);
                         let _ = window.emit("open-file-from-os", path_str);
-                    // mainウィンドウが存在するかチェック（初回起動かどうかの判定）
-                    if app_handle.get_webview_window("main").is_some() {
-                        // アプリが既に起動している場合: 新しいウィンドウを作成
-                        let mut next_id = state.next_window_id.lock().unwrap();
-                        let window_label = format!("window-{}", *next_id);
-                        *next_id += 1;
-                        drop(next_id);
-
-                        println!("[Rust] Creating new window: {}", window_label);
-
-                        match tauri::WebviewWindowBuilder::new(
-                            app_handle,
-                            &window_label,
-                            tauri::WebviewUrl::App("index.html".into()),
-                        )
-                        .title("Image Viewer")
-                        .inner_size(800.0, 600.0)
-                        .build()
-                        {
-                            Ok(new_window) => {
-                                let path_str = path.to_string_lossy().to_string();
-                                println!(
-                                    "[Rust] New window created, emitting to: {}",
-                                    window_label
-                                );
-                                let _ = new_window.emit("open-file-from-os", path_str);
-                            }
-                            Err(e) => {
-                                eprintln!("[Rust] Failed to create window: {}", e);
-                            }
-                        }
                     } else {
                         // ② アプリ起動プロセスの途中の場合（未起動からのコールドスタート）
                         // フロントエンドの準備ができるまで pending_paths に一旦退避させる
@@ -394,9 +368,8 @@ mod tests {
     fn test_app_state_default() {
         let state = AppState::default();
         assert!(state.windows.lock().unwrap().is_empty());
-        #[cfg(target_os = "macos")]
-        assert_eq!(*state.next_window_id.lock().unwrap(), 0);
         assert!(state.pending_paths.lock().unwrap().is_empty());
+        assert!(state.thumbnail_cache.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -576,27 +549,4 @@ mod tests {
         }
     }
 
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_next_window_id_increment() {
-        let state = AppState::default();
-
-        // 初期値は0
-        assert_eq!(*state.next_window_id.lock().unwrap(), 0);
-
-        // インクリメント
-        {
-            let mut next_id = state.next_window_id.lock().unwrap();
-            *next_id += 1;
-        }
-        assert_eq!(*state.next_window_id.lock().unwrap(), 1);
-
-        // 複数回インクリメント
-        {
-            let mut next_id = state.next_window_id.lock().unwrap();
-            *next_id += 1;
-            *next_id += 1;
-        }
-        assert_eq!(*state.next_window_id.lock().unwrap(), 3);
-    }
 }
