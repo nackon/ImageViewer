@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{command, Emitter, Manager, State, WebviewWindow};
+use tauri::{command, Manager, State, WebviewWindow};
+
+#[cfg(target_os = "macos")]
+use tauri::Emitter;
 
 // ウィンドウごとの状態
 #[derive(Clone, Default)]
@@ -14,6 +17,7 @@ struct WindowState {
 #[derive(Default)]
 struct AppState {
     windows: Mutex<HashMap<String, WindowState>>,
+    #[cfg(target_os = "macos")]
     next_window_id: Mutex<usize>,
     pending_paths: Mutex<Vec<PathBuf>>, // アプリ起動時のパスをバッファリング
 }
@@ -303,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_next_image_logic() {
-        let images = vec![
+        let images = [
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
             PathBuf::from("/test/image3.jpg"),
@@ -326,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_previous_image_logic() {
-        let images = vec![
+        let images = [
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
             PathBuf::from("/test/image3.jpg"),
@@ -386,11 +390,12 @@ mod tests {
 
     #[test]
     fn test_image_list_sorting() {
-        let mut images = vec![
+        let mut images = [
             PathBuf::from("/test/image3.jpg"),
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
-        ];
+        ]
+        .to_vec();
         images.sort();
 
         assert_eq!(images[0], PathBuf::from("/test/image1.jpg"));
