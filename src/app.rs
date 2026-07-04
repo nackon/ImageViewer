@@ -90,7 +90,8 @@ impl ImageViewer {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::FileOpened(path) | Message::FileOpenedFromMac(path) => {
+            Message::FileOpened(path) => {
+                eprintln!("[DEBUG] FileOpened: {:?}", path);
                 self.is_loading = true;
                 if let Err(e) = self.file_manager.load_directory(&path) {
                     self.error_message = Some(format!("Failed to load directory: {}", e));
@@ -103,6 +104,26 @@ impl ImageViewer {
                     return self.load_image(path);
                 }
 
+                self.is_loading = false;
+                Task::none()
+            }
+            Message::FileOpenedFromMac(path) => {
+                eprintln!("[DEBUG] FileOpenedFromMac: {:?}", path);
+                self.is_loading = true;
+                if let Err(e) = self.file_manager.load_directory(&path) {
+                    eprintln!("[DEBUG] load_directory エラー: {}", e);
+                    self.error_message = Some(format!("Failed to load directory: {}", e));
+                    self.is_loading = false;
+                    return Task::none();
+                }
+
+                if let Some(current_path) = self.file_manager.get_current() {
+                    eprintln!("[DEBUG] 画像をロード: {:?}", current_path);
+                    let path = current_path.clone();
+                    return self.load_image(path);
+                }
+
+                eprintln!("[DEBUG] current_path が None");
                 self.is_loading = false;
                 Task::none()
             }

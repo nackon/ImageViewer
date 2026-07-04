@@ -2,7 +2,8 @@
 pub mod macos_integration {
     use std::path::PathBuf;
     use iced::futures::{channel::mpsc, stream::Stream};
-    use objc2::{runtime::{AnyClass, Sel}, sel};
+    use objc2::{rc::Retained, runtime::{AnyObject, AnyClass, Sel}, sel};
+    use objc2_app_kit::NSApplication;
     use foundation::{NSArray, NSString};
 
     // グローバルな通知用ストリームの送信元
@@ -10,20 +11,39 @@ pub mod macos_integration {
 
     // winit内部クラスに直接埋め込むためのファイルオープン通知メソッド (C互換の生関数)
     extern "C" fn swizzled_open_files(
-        _this: *mut objc2::runtime::AnyObject,
+        _this: *mut AnyObject,
         _sel: Sel,
-        _sender: *mut objc2::runtime::AnyObject,
-        filenames: *mut objc2::runtime::AnyObject,
+        _sender: *mut AnyObject,
+        filenames: *mut AnyObject, // OSから渡されるファイル名の配列ポインタ
     ) {
+        eprintln!("[DEBUG] swizzled_open_files が呼ばれました");
         unsafe {
             if let Some(ref tx) = SENDER_CHANNEL {
-                // 生ポインタから安全に NSArray<NSString> の参照を復元
-                let filenames_ref: &NSArray<NSString> = &*(filenames as *const NSArray<NSString>);
-                for filename in filenames_ref {
-                    let path_str = filename.to_string();
-                    let path = PathBuf::from(path_str);
-                    let _ = tx.unbounded_send(path);
+                eprintln!("[DEBUG] SENDER_CHANNELが初期化されています");
+                // 安全に AnyObject の参照から NSArray の型へと型安全に紐付ける
+                if !filenames.is_null() {
+                    let array_ref = &*(filenames as *const NSArray<NSString>);
+
+                    // 配列の要素数を取得してループを回す
+                    let count = array_ref.count();
+                    eprintln!("[DEBUG] ファイル数: {}", count);
+                    for i in 0..count {
+                        let ns_str = array_ref.objectAtIndex(i);
+                        let path_str = ns_str.to_string();
+                        let path = PathBuf::from(path_str);
+                        eprintln!("[DEBUG] ファイルパス: {:?}", path);
+
+                        // iced 側のストリームに送信
+                        match tx.unbounded_send(path) {
+                            Ok(_) => eprintln!("[DEBUG] メッセージ送信成功"),
+                            Err(e) => eprintln!("[DEBUG] メッセージ送信失敗: {:?}", e),
+                        }
+                    }
+                } else {
+                    eprintln!("[DEBUG] filenames が null です");
                 }
+            } else {
+                eprintln!("[DEBUG] SENDER_CHANNELがまだ初期化されていません");
             }
         }
     }
@@ -33,10 +53,9 @@ pub mod macos_integration {
         // winit が内部的に使用しているクラス「WinitAppDelegate」を取得
         if let Some(winit_class) = AnyClass::get("WinitAppDelegate") {
             let selector = sel!(application:openFiles:);
-            let types = "v@:@@\0"; // メソッドの型シグネチャ（void, self, selector, id, id）
+            let types = "v@:@@\0"; // メソッドの型シグネチャ
 
             unsafe {
-                // ★ 正しいパスである objc2::ffi::class_addMethod を使用します
                 let _ = objc2::ffi::class_addMethod(
                     winit_class as *const AnyClass as *mut _,
                     selector.as_ptr(),
