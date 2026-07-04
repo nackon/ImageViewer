@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use tauri::{command, State};
+use tauri::{command, State, Manager, Emitter};
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -77,6 +77,38 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![load_image, next_image, previous_image])
+        .setup(|app| {
+            // Handle file opened from Finder (macOS "Open With")
+            let args: Vec<String> = std::env::args().collect();
+            println!("=== Tauri startup args: {:?}", args);
+
+            // Find the first image file argument
+            let file_arg = args.iter().skip(1).find(|arg| {
+                let lower = arg.to_lowercase();
+                lower.ends_with(".jpg") ||
+                lower.ends_with(".jpeg") ||
+                lower.ends_with(".png") ||
+                lower.ends_with(".gif") ||
+                lower.ends_with(".bmp") ||
+                lower.ends_with(".webp")
+            });
+
+            println!("=== Found image file: {:?}", file_arg);
+
+            // If we found an image file, emit an event to the frontend
+            if let Some(path) = file_arg {
+                let window = app.get_webview_window("main").unwrap();
+                let path = path.clone();
+                println!("=== Emitting open-file event with path: {}", path);
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    let result = window.emit("open-file", path.clone());
+                    println!("=== Event emit result: {:?}", result);
+                });
+            }
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

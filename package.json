@@ -5,8 +5,9 @@
   "description": "Simple image viewer built with Tauri",
   "scripts": {
     "tauri": "tauri",
-    "dev": "tauri dev",
-    "build": "tauri build"
+    "dev": "vite",
+    "build": "vite build && tauri build",
+    "tauri:dev": "tauri dev"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.0",
@@ -14,6 +15,8 @@
     "@tauri-apps/plugin-fs": "^2.0.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.1.0"
+    "@tauri-apps/cli": "^2.1.0",
+    "esbuild": "^0.28.1",
+    "vite": "^8.1.3"
   }
 }

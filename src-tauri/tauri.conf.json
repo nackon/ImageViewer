@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "identifier": "com.example.imageviewer",
   "build": {
-    "beforeDevCommand": "",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "vite build",
     "frontendDist": "../dist"
   },
   "bundle": {
@@ -35,6 +35,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "ImageViewer",
         "width": 1200,
         "height": 800,

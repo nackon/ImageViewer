@@ -3,20 +3,26 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
+console.log('=== ImageViewer JS loaded ===');
+
 const imageEl = document.getElementById('image');
 const filenameEl = document.getElementById('filename');
 const infoEl = document.getElementById('info');
 const dropZone = document.getElementById('drop-zone');
 
+console.log('Elements:', { imageEl, filenameEl, infoEl, dropZone });
+
 let currentPath = null;
 
 async function loadImage(path) {
     try {
+        console.log('Loading image:', path);
         await invoke('load_image', { path });
         currentPath = path;
 
         // Convert file path to URL that Tauri can serve
         const assetUrl = convertFileSrc(path);
+        console.log('Asset URL:', assetUrl);
         imageEl.src = assetUrl;
         imageEl.classList.add('loaded');
         dropZone.style.display = 'none';
@@ -27,7 +33,12 @@ async function loadImage(path) {
 
         // Get image dimensions when loaded
         imageEl.onload = () => {
+            console.log('Image loaded successfully');
             infoEl.textContent = `${imageEl.naturalWidth} × ${imageEl.naturalHeight}`;
+        };
+
+        imageEl.onerror = () => {
+            console.error('Image element failed to load');
         };
     } catch (error) {
         console.error('Failed to load image:', error);
@@ -58,6 +69,7 @@ async function previousImage() {
 }
 
 async function openFile() {
+    console.log('openFile() called');
     try {
         const selected = await open({
             multiple: false,
@@ -67,6 +79,7 @@ async function openFile() {
             }]
         });
 
+        console.log('Selected file:', selected);
         if (selected) {
             await loadImage(selected);
         }
@@ -76,9 +89,19 @@ async function openFile() {
 }
 
 // Button handlers
-document.getElementById('open-btn').addEventListener('click', openFile);
-document.getElementById('next-btn').addEventListener('click', nextImage);
-document.getElementById('prev-btn').addEventListener('click', previousImage);
+console.log('Setting up button handlers');
+document.getElementById('open-btn').addEventListener('click', () => {
+    console.log('Open button clicked');
+    openFile();
+});
+document.getElementById('next-btn').addEventListener('click', () => {
+    console.log('Next button clicked');
+    nextImage();
+});
+document.getElementById('prev-btn').addEventListener('click', () => {
+    console.log('Previous button clicked');
+    previousImage();
+});
 
 // Keyboard handlers
 document.addEventListener('keydown', (e) => {
@@ -95,9 +118,12 @@ document.addEventListener('keydown', (e) => {
 });
 
 // File drop handler
+console.log('Setting up drag-drop listener');
 listen('tauri://drag-drop', (event) => {
+    console.log('Drag-drop event:', event);
     const files = event.payload.paths;
     if (files && files.length > 0) {
+        console.log('Dropped file:', files[0]);
         loadImage(files[0]);
     }
 });
@@ -112,20 +138,12 @@ dropZone.addEventListener('dragleave', () => {
     dropZone.classList.remove('active');
 });
 
-// Handle file opened from Finder (macOS)
-window.addEventListener('DOMContentLoaded', async () => {
-    // Check if app was opened with a file
-    const args = window.__TAURI__?.process?.args || [];
-    const fileArg = args.find(arg =>
-        arg.endsWith('.jpg') ||
-        arg.endsWith('.jpeg') ||
-        arg.endsWith('.png') ||
-        arg.endsWith('.gif') ||
-        arg.endsWith('.bmp') ||
-        arg.endsWith('.webp')
-    );
-
-    if (fileArg) {
-        await loadImage(fileArg);
-    }
-});
+// Handle file opened from Finder (macOS "Open With")
+(async () => {
+    console.log('Setting up open-file listener');
+    await listen('open-file', (event) => {
+        console.log('Received open-file event:', event.payload);
+        loadImage(event.payload);
+    });
+    console.log('open-file listener registered');
+})();
