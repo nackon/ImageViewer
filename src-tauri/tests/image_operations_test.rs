@@ -71,7 +71,7 @@ fn test_zoom_levels() {
 
 #[test]
 fn test_image_navigation_wraparound() {
-    let images = vec![
+    let images = [
         PathBuf::from("image1.jpg"),
         PathBuf::from("image2.jpg"),
         PathBuf::from("image3.jpg"),
