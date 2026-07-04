@@ -1,75 +1,58 @@
 #[cfg(target_os = "macos")]
 pub mod macos_integration {
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
     use iced::futures::{channel::mpsc, stream::Stream};
-    use objc2::{declare_class, mutability, rc::Retained, ClassType, DeclaredClass};
-    use foundation::{NSNotification, NSNotificationCenter, NSString};
+    use objc2::{runtime::{AnyClass, Sel}, sel};
+    use foundation::{NSArray, NSString};
 
-    const NS_APPLICATION_OPEN_FILE_NOTIFICATION: &str = "NSApplicationOpenFileNotification";
+    // グローバルな通知用ストリームの送信元
+    static mut SENDER_CHANNEL: Option<mpsc::UnboundedSender<PathBuf>> = None;
 
-    static SENDER: OnceLock<Mutex<mpsc::UnboundedSender<PathBuf>>> = OnceLock::new();
-
-    declare_class!(
-        struct NotificationObserver;
-
-        unsafe impl ClassType for NotificationObserver {
-            type Super = objc2::runtime::NSObject;
-            type Mutability = mutability::InteriorMutable;
-            const NAME: &'static str = "NotificationObserver";
-        }
-
-        impl DeclaredClass for NotificationObserver {
-            type Ivars = ();
-        }
-
-        unsafe impl NotificationObserver {
-            #[method(onOpenFile:)]
-            fn on_open_file(&self, notification: &NSNotification) {
-                if let Some(user_info) = unsafe { notification.userInfo() } {
-                    let key = NSString::from_str("NSDevicePath");
-                    unsafe {
-                        if let Some(path_nsstr) = user_info.objectForKey(&key) {
-                            let raw_ptr: *const objc2::runtime::AnyObject = Retained::as_ptr(&path_nsstr);
-                            let ns_str: &NSString = &*(raw_ptr as *const NSString);
-                            let path_str = ns_str.to_string();
-                            let path = PathBuf::from(path_str);
-
-                            if let Some(sender) = SENDER.get() {
-                                if let Ok(guard) = sender.lock() {
-                                    let _ = guard.unbounded_send(path);
-                                }
-                            }
-                        }
-                    }
+    // winit内部クラスに直接埋め込むためのファイルオープン通知メソッド (C互換の生関数)
+    extern "C" fn swizzled_open_files(
+        _this: *mut objc2::runtime::AnyObject,
+        _sel: Sel,
+        _sender: *mut objc2::runtime::AnyObject,
+        filenames: *mut objc2::runtime::AnyObject,
+    ) {
+        unsafe {
+            if let Some(ref tx) = SENDER_CHANNEL {
+                // 生ポインタから安全に NSArray<NSString> の参照を復元
+                let filenames_ref: &NSArray<NSString> = &*(filenames as *const NSArray<NSString>);
+                for filename in filenames_ref {
+                    let path_str = filename.to_string();
+                    let path = PathBuf::from(path_str);
+                    let _ = tx.unbounded_send(path);
                 }
             }
         }
-    );
+    }
 
+    // 起動直後（main関数の1行目）に最速で呼び出す関数
+    pub fn pre_init_macos_listener() {
+        // winit が内部的に使用しているクラス「WinitAppDelegate」を取得
+        if let Some(winit_class) = AnyClass::get("WinitAppDelegate") {
+            let selector = sel!(application:openFiles:);
+            let types = "v@:@@\0"; // メソッドの型シグネチャ（void, self, selector, id, id）
+
+            unsafe {
+                // ★ 正しいパスである objc2::ffi::class_addMethod を使用します
+                let _ = objc2::ffi::class_addMethod(
+                    winit_class as *const AnyClass as *mut _,
+                    selector.as_ptr(),
+                    Some(std::mem::transmute::<*const (), unsafe extern "C" fn()>(swizzled_open_files as *const ())),
+                    types.as_ptr() as *const _,
+                );
+            }
+        }
+    }
+
+    // iced の Subscription 用のストリームを流す
     pub fn listen_open_file_events() -> impl Stream<Item = PathBuf> {
         let (tx, rx) = mpsc::unbounded::<PathBuf>();
-
-        SENDER.set(Mutex::new(tx)).ok();
-
-        let observer: Retained<NotificationObserver> = unsafe {
-            objc2::msg_send_id![NotificationObserver::alloc(), init]
-        };
-
-        let center = unsafe { NSNotificationCenter::defaultCenter() };
-        let notification_name = NSString::from_str(NS_APPLICATION_OPEN_FILE_NOTIFICATION);
-
         unsafe {
-            center.addObserver_selector_name_object(
-                &observer,
-                objc2::sel!(onOpenFile:),
-                Some(&notification_name),
-                None,
-            );
+            SENDER_CHANNEL = Some(tx);
         }
-
-        std::mem::forget(observer);
-
         rx
     }
 }

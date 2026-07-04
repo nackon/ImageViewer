@@ -90,7 +90,7 @@ impl ImageViewer {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::FileOpened(path) => {
+            Message::FileOpened(path) | Message::FileOpenedFromMac(path) => {
                 self.is_loading = true;
                 if let Err(e) = self.file_manager.load_directory(&path) {
                     self.error_message = Some(format!("Failed to load directory: {}", e));
@@ -105,12 +105,6 @@ impl ImageViewer {
 
                 self.is_loading = false;
                 Task::none()
-            }
-            Message::FileOpenedFromMac(path) => {
-                // リポジトリ内の既存のファイル管理・読み込みロジックを呼び出す
-                // 例: self.file_manager.load_file(path) などの実装に合わせて記述
-                println!("Macからファイルを開く要求を受け取りました: {:?}", path);
-                iced::Task::none()
             }
             Message::ImageLoaded(result) => {
                 self.is_loading = false;
@@ -536,4 +530,88 @@ pub fn subscription(&self) -> iced::Subscription<Message> {
     }
 }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::TempDir;
+
+    fn create_test_image(dir: &std::path::Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        File::create(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_file_opened_from_mac_loads_image() {
+        let temp_dir = TempDir::new().unwrap();
+        let image_path = create_test_image(temp_dir.path(), "test.jpg");
+
+        let mut viewer = ImageViewer {
+            file_manager: FileManager::new(),
+            image_cache: ImageCache::new(15),
+            current_image: None,
+            zoom_level: ZoomLevel::Fit,
+            window_width: 1200.0,
+            window_height: 800.0,
+            error_message: None,
+            show_thumbnails: false,
+            thumbnail_grid: ThumbnailGrid::new(),
+            is_fullscreen: false,
+            is_loading: false,
+        };
+
+        // FileOpenedFromMacメッセージを送信
+        let _ = viewer.update(Message::FileOpenedFromMac(image_path.clone()));
+
+        // ファイルマネージャーにファイルがロードされたことを確認
+        assert!(viewer.is_loading);
+        assert_eq!(viewer.file_manager.total_count(), 1);
+        assert!(viewer.error_message.is_none());
+    }
+
+    #[test]
+    fn test_file_opened_and_file_opened_from_mac_same_behavior() {
+        let temp_dir = TempDir::new().unwrap();
+        let image_path = create_test_image(temp_dir.path(), "test.jpg");
+
+        // FileOpenedメッセージでのテスト
+        let mut viewer1 = ImageViewer {
+            file_manager: FileManager::new(),
+            image_cache: ImageCache::new(15),
+            current_image: None,
+            zoom_level: ZoomLevel::Fit,
+            window_width: 1200.0,
+            window_height: 800.0,
+            error_message: None,
+            show_thumbnails: false,
+            thumbnail_grid: ThumbnailGrid::new(),
+            is_fullscreen: false,
+            is_loading: false,
+        };
+        let _ = viewer1.update(Message::FileOpened(image_path.clone()));
+
+        // FileOpenedFromMacメッセージでのテスト
+        let mut viewer2 = ImageViewer {
+            file_manager: FileManager::new(),
+            image_cache: ImageCache::new(15),
+            current_image: None,
+            zoom_level: ZoomLevel::Fit,
+            window_width: 1200.0,
+            window_height: 800.0,
+            error_message: None,
+            show_thumbnails: false,
+            thumbnail_grid: ThumbnailGrid::new(),
+            is_fullscreen: false,
+            is_loading: false,
+        };
+        let _ = viewer2.update(Message::FileOpenedFromMac(image_path.clone()));
+
+        // 両方のビューアが同じ状態になることを確認
+        assert_eq!(viewer1.is_loading, viewer2.is_loading);
+        assert_eq!(viewer1.file_manager.total_count(), viewer2.file_manager.total_count());
+        assert_eq!(viewer1.error_message.is_some(), viewer2.error_message.is_some());
+    }
 }
