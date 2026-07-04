@@ -426,6 +426,8 @@ impl ImageViewer {
                     }
                 } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
                     Some(Message::WindowResized(size.width, size.height))
+                } else if let iced::Event::Window(iced::window::Event::FileDropped(path)) = event {
+                    Some(Message::FileOpened(path.clone()))
                 } else {
                     None
                 }
@@ -463,6 +465,8 @@ impl ImageViewer {
                     }
                 } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
                     Some(Message::WindowResized(size.width, size.height))
+                } else if let iced::Event::Window(iced::window::Event::FileDropped(path)) = event {
+                    Some(Message::FileOpened(path.clone()))
                 } else {
                     None
                 }

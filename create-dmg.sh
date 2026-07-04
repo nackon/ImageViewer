@@ -26,7 +26,49 @@ mkdir -p "${BUNDLE_NAME}/Contents/Resources"
 
 # Copy binary
 echo -e "${BLUE}Copying binary...${NC}"
-cp target/release/image_viewer "${BUNDLE_NAME}/Contents/MacOS/${APP_NAME}"
+cp target/release/image_viewer "${BUNDLE_NAME}/Contents/MacOS/${APP_NAME}-bin"
+
+# Create AppleScript source for the launcher
+echo -e "${BLUE}Creating AppleScript launcher...${NC}"
+mkdir -p "${BUNDLE_NAME}/Contents/Resources/Scripts"
+
+cat > "${BUNDLE_NAME}/Contents/Resources/Scripts/main.scpt" << 'APPLESCRIPT_EOF'
+on run
+    set binPath to (POSIX path of (path to me)) & "Contents/MacOS/ImageViewer-bin"
+    do shell script "'" & binPath & "' > /dev/null 2>&1 &"
+end run
+
+on open theFiles
+    set binPath to (POSIX path of (path to me)) & "Contents/MacOS/ImageViewer-bin"
+    repeat with aFile in theFiles
+        set filePath to POSIX path of aFile
+        do shell script "'" & binPath & "' '" & filePath & "' > /dev/null 2>&1 &"
+        exit repeat
+    end repeat
+end open
+APPLESCRIPT_EOF
+
+# Compile the AppleScript
+osacompile -o "${BUNDLE_NAME}/Contents/Resources/Scripts/main.scpt" "${BUNDLE_NAME}/Contents/Resources/Scripts/main.scpt"
+
+# Create a simple launcher executable that runs the AppleScript
+cat > "${BUNDLE_NAME}/Contents/MacOS/${APP_NAME}" << 'LAUNCHER_EOF'
+#!/bin/bash
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_PATH="${DIR}/../Resources/Scripts/main.scpt"
+
+if [ $# -gt 0 ]; then
+    # Pass files to the binary directly
+    exec "${DIR}/ImageViewer-bin" "$@"
+else
+    # Launch without arguments
+    exec "${DIR}/ImageViewer-bin"
+fi
+LAUNCHER_EOF
+
+chmod +x "${BUNDLE_NAME}/Contents/MacOS/${APP_NAME}"
+
+echo -e "${BLUE}Launcher created${NC}"
 
 # Create Info.plist
 echo -e "${BLUE}Creating Info.plist...${NC}"
