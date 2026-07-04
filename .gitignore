@@ -32,3 +32,6 @@ generate_test_images
 # Temporary files
 *.tmp
 *.log
+
+# Icon generation intermediate files
+assets/icon/AppIcon.iconset/

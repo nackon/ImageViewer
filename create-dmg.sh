@@ -55,6 +55,8 @@ cat > "${BUNDLE_NAME}/Contents/Info.plist" << EOF
     <string>10.13</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -78,8 +80,14 @@ cat > "${BUNDLE_NAME}/Contents/Info.plist" << EOF
 </plist>
 EOF
 
-# Create a simple icon (optional - you can replace with actual icon later)
-# For now, we'll skip icon creation
+# Copy application icon
+echo -e "${BLUE}Copying application icon...${NC}"
+if [ -f "assets/icon/icon.icns" ]; then
+    cp assets/icon/icon.icns "${BUNDLE_NAME}/Contents/Resources/AppIcon.icns"
+    echo -e "${GREEN}✓ Icon copied${NC}"
+else
+    echo -e "${BLUE}Note: No icon file found at assets/icon/icon.icns${NC}"
+fi
 
 # Create temporary DMG directory
 echo -e "${BLUE}Preparing DMG contents...${NC}"

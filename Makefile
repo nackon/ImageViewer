@@ -1,4 +1,4 @@
-.PHONY: help build run test clean dmg release
+.PHONY: help build run test clean dmg release generate-icon
 
 APP_NAME = ImageViewer
 VERSION = 0.1.0
@@ -38,6 +38,11 @@ open-dmg: ## Open the DMG file
 generate-test-images: ## Generate test images
 	rustc --edition 2021 generate_test_images.rs -L target/debug/deps --extern image=$$(find target/debug/deps -name "libimage-*.rlib" | head -1)
 	./generate_test_images
+
+generate-icon: ## Generate application icon
+	@echo "Generating application icon..."
+	@command -v python3 >/dev/null 2>&1 || (echo "Error: python3 is required" && exit 1)
+	python3 scripts/generate_icon.py
 
 install-deps: ## Install development dependencies
 	@echo "Checking for Rust..."
