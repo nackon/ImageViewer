@@ -106,8 +106,8 @@ fn test_thumbnail_grid_calculation() {
     let gap = 15;
     let item_width = thumbnail_width + gap;
 
-    let container_widths = vec![800, 1024, 1440, 1920];
-    let expected_columns = vec![4, 6, 8, 11];
+    let container_widths = [800, 1024, 1440, 1920];
+    let expected_columns = [4, 6, 8, 11];
 
     for (container, expected) in container_widths.iter().zip(expected_columns.iter()) {
         let columns = container / item_width;
