@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { exit } from '@tauri-apps/plugin-process';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 console.log('=== ImageViewer JS loaded ===');
 
@@ -348,7 +348,7 @@ document.addEventListener('keydown', async (e) => {
             case 'q':
             case 'Q':
             case 'Escape':
-                await exit(0);
+                await getCurrentWindow().close();
                 break;
             case '+':
             case '=':
