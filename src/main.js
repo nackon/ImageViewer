@@ -132,11 +132,39 @@ async function openFile() {
     }
 }
 
+async function openFolder() {
+    console.log('openFolder() called');
+    try {
+        const selected = await open({
+            directory: true,
+            multiple: false
+        });
+
+        console.log('Selected folder:', selected);
+        if (selected) {
+            const firstImage = await invoke('load_folder', { path: selected });
+            console.log('First image from folder:', firstImage);
+            if (firstImage) {
+                await loadImage(firstImage);
+            } else {
+                filenameEl.textContent = 'No images found in folder';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to open folder:', error);
+        filenameEl.textContent = 'Error opening folder';
+    }
+}
+
 // Button handlers
 console.log('Setting up button handlers');
 document.getElementById('open-btn').addEventListener('click', () => {
     console.log('Open button clicked');
     openFile();
+});
+document.getElementById('open-folder-btn').addEventListener('click', () => {
+    console.log('Open folder button clicked');
+    openFolder();
 });
 document.getElementById('next-btn').addEventListener('click', () => {
     console.log('Next button clicked');
@@ -172,12 +200,34 @@ document.addEventListener('keydown', (e) => {
 
 // File drop handler
 console.log('Setting up drag-drop listener');
-listen('tauri://drag-drop', (event) => {
+listen('tauri://drag-drop', async (event) => {
     console.log('Drag-drop event:', event);
-    const files = event.payload.paths;
-    if (files && files.length > 0) {
-        console.log('Dropped file:', files[0]);
-        loadImage(files[0]);
+    const paths = event.payload.paths;
+    if (paths && paths.length > 0) {
+        const droppedPath = paths[0];
+        console.log('Dropped path:', droppedPath);
+
+        try {
+            // Try to load as folder first
+            const firstImage = await invoke('load_folder', { path: droppedPath });
+            if (firstImage) {
+                console.log('Loaded folder, first image:', firstImage);
+                await loadImage(firstImage);
+            } else {
+                // If folder loading returns null, try as a file
+                console.log('Not a folder or empty, trying as file');
+                await loadImage(droppedPath);
+            }
+        } catch (error) {
+            // If folder loading fails, try as a file
+            console.log('Folder load failed, trying as file:', error);
+            try {
+                await loadImage(droppedPath);
+            } catch (fileError) {
+                console.error('Failed to load as file:', fileError);
+                filenameEl.textContent = 'Error loading dropped item';
+            }
+        }
     }
 });
 
