@@ -19,6 +19,20 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -38,13 +52,13 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
-          path: target
+          path: src-tauri/target
           key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-target-
 
       - name: Run tests
-        run: cargo test --verbose
+        run: cd src-tauri && cargo test --verbose
 
   format:
     name: Format Check
@@ -58,7 +72,7 @@ jobs:
           components: rustfmt
 
       - name: Check formatting
-        run: cargo fmt -- --check
+        run: cd src-tauri && cargo fmt -- --check
 
   clippy:
     name: Clippy
@@ -71,6 +85,20 @@ jobs:
         with:
           components: clippy
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -90,13 +118,13 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
-          path: target
+          path: src-tauri/target
           key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-target-
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
 
   build:
     name: Build
@@ -107,6 +135,20 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -126,16 +168,16 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
-          path: target
+          path: src-tauri/target
           key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-target-
 
-      - name: Build release
-        run: cargo build --release --verbose
+      - name: Build Tauri app
+        run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: image-viewer-linux
-          path: target/release/image_viewer
+          path: src-tauri/target/release/bundle/

@@ -1,15 +1,24 @@
 use std::path::PathBuf;
-use tauri::{command, State, Manager, Emitter};
+use tauri::{command, State, Manager, Emitter, WebviewWindow};
 use std::sync::Mutex;
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use image::ImageReader;
 
+// ウィンドウごとの状態
+#[derive(Clone, Default)]
+struct WindowState {
+    current_images: Vec<PathBuf>,
+    current_index: usize,
+}
+
+// アプリ全体の状態（ウィンドウごとの状態を管理）
 #[derive(Default)]
 struct AppState {
-    current_images: Mutex<Vec<PathBuf>>,
-    current_index: Mutex<usize>,
+    windows: Mutex<HashMap<String, WindowState>>,
+    next_window_id: Mutex<usize>,
     pending_paths: Mutex<Vec<PathBuf>>,
-    thumbnail_cache: Mutex<std::collections::HashMap<PathBuf, PathBuf>>,
+    thumbnail_cache: Mutex<HashMap<PathBuf, PathBuf>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -22,7 +31,7 @@ struct ImageInfo {
 }
 
 #[command]
-fn load_image(path: String, state: State<AppState>) -> Result<ImageInfo, String> {
+fn load_image(window: WebviewWindow, path: String, state: State<AppState>) -> Result<ImageInfo, String> {
     let path = PathBuf::from(&path);
 
     // Get image dimensions and file size
@@ -63,8 +72,13 @@ fn load_image(path: String, state: State<AppState>) -> Result<ImageInfo, String>
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
-    *state.current_images.lock().unwrap() = images;
-    *state.current_index.lock().unwrap() = index;
+    // ウィンドウごとの状態を更新
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
+    windows.insert(window_label, WindowState {
+        current_images: images,
+        current_index: index,
+    });
 
     Ok(ImageInfo {
         width,
@@ -76,60 +90,72 @@ fn load_image(path: String, state: State<AppState>) -> Result<ImageInfo, String>
 }
 
 #[command]
-fn next_image(state: State<AppState>) -> Result<Option<String>, String> {
-    let images = state.current_images.lock().unwrap();
-    let mut index = state.current_index.lock().unwrap();
+fn next_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
 
-    if images.is_empty() {
+    let window_state = windows.get_mut(&window_label)
+        .ok_or("Window state not found")?;
+
+    if window_state.current_images.is_empty() {
         return Ok(None);
     }
 
-    *index = (*index + 1) % images.len();
-    Ok(Some(images[*index].to_string_lossy().to_string()))
+    window_state.current_index = (window_state.current_index + 1) % window_state.current_images.len();
+    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
 }
 
 #[command]
-fn previous_image(state: State<AppState>) -> Result<Option<String>, String> {
-    let images = state.current_images.lock().unwrap();
-    let mut index = state.current_index.lock().unwrap();
+fn previous_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
 
-    if images.is_empty() {
+    let window_state = windows.get_mut(&window_label)
+        .ok_or("Window state not found")?;
+
+    if window_state.current_images.is_empty() {
         return Ok(None);
     }
 
-    *index = if *index == 0 {
-        images.len() - 1
+    window_state.current_index = if window_state.current_index == 0 {
+        window_state.current_images.len() - 1
     } else {
-        *index - 1
+        window_state.current_index - 1
     };
 
-    Ok(Some(images[*index].to_string_lossy().to_string()))
+    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
 }
 
 #[command]
-fn first_image(state: State<AppState>) -> Result<Option<String>, String> {
-    let images = state.current_images.lock().unwrap();
-    let mut index = state.current_index.lock().unwrap();
+fn first_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
 
-    if images.is_empty() {
+    let window_state = windows.get_mut(&window_label)
+        .ok_or("Window state not found")?;
+
+    if window_state.current_images.is_empty() {
         return Ok(None);
     }
 
-    *index = 0;
-    Ok(Some(images[*index].to_string_lossy().to_string()))
+    window_state.current_index = 0;
+    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
 }
 
 #[command]
-fn last_image(state: State<AppState>) -> Result<Option<String>, String> {
-    let images = state.current_images.lock().unwrap();
-    let mut index = state.current_index.lock().unwrap();
+fn last_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
 
-    if images.is_empty() {
+    let window_state = windows.get_mut(&window_label)
+        .ok_or("Window state not found")?;
+
+    if window_state.current_images.is_empty() {
         return Ok(None);
     }
 
-    *index = images.len() - 1;
-    Ok(Some(images[*index].to_string_lossy().to_string()))
+    window_state.current_index = window_state.current_images.len() - 1;
+    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
 }
 
 #[command]
@@ -200,8 +226,8 @@ fn get_thumbnail(path: String, state: State<AppState>) -> Result<String, String>
 }
 
 #[command]
-fn frontend_ready(_app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<String>, String> {
-    println!("[Rust] frontend_ready command called");
+fn frontend_ready(window: WebviewWindow, state: State<AppState>) -> Result<Vec<String>, String> {
+    println!("[Rust] frontend_ready command called for window: {}", window.label());
     let mut paths = state.pending_paths.lock().unwrap();
     let result: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
 
