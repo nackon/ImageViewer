@@ -2,43 +2,69 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { calculateFitScale, applyZoomIn, applyZoomOut, formatZoomPercentage } from './zoom.js';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 console.log('=== ImageViewer JS loaded ===');
 
+// DOM elements
 const imageEl = document.getElementById('image');
+const imageWrapper = document.getElementById('image-wrapper');
 const filenameEl = document.getElementById('filename');
 const infoEl = document.getElementById('info');
 const dropZone = document.getElementById('drop-zone');
+const imageContainer = document.getElementById('image-container');
+const thumbnailView = document.getElementById('thumbnail-view');
+const thumbnailGrid = document.getElementById('thumbnail-grid');
+const footer = document.getElementById('footer');
+const imagePosition = document.getElementById('image-position');
+const zoomLevel = document.getElementById('zoom-level');
+const thumbnailHint = document.getElementById('thumbnail-hint');
+const thumbnailFooter = document.getElementById('thumbnail-footer');
 
-console.log('Elements:', { imageEl, filenameEl, infoEl, dropZone });
-
+// State
 let currentPath = null;
-let currentScale = 1.0;
-let fitToScreen = true;
+let currentZoom = 1.0; // 100%
+let zoomMode = 'fit'; // 'fit' or 'manual'
+let viewMode = 'image'; // 'image' or 'thumbnail'
+let allImages = [];
+let currentIndex = 0;
+let selectedThumbnailIndex = 0;
 
+// Constants
+const ZOOM_STEP = 0.25; // 25%
+
+// Load image
 async function loadImage(path) {
     try {
         console.log('Loading image:', path);
-        await invoke('load_image', { path });
+        const result = await invoke('load_image', { path });
         currentPath = path;
+        allImages = result.images || [];
+        currentIndex = result.index || 0;
 
-        // Convert file path to URL that Tauri can serve
+        // Convert file path to URL
         const assetUrl = convertFileSrc(path);
         console.log('Asset URL:', assetUrl);
+
         imageEl.src = assetUrl;
-        imageEl.classList.add('loaded');
+        imageWrapper.classList.add('loaded');
         dropZone.style.display = 'none';
 
-        // Update filename
+        // Update filename and info
         const filename = path.split('/').pop();
-        filenameEl.textContent = filename;
+        filenameEl.textContent = `${filename} - ${result.width} × ${result.height} - ${formatFileSize(result.size)}`;
 
-        // Get image dimensions when loaded
+        // Update footer
+        updateFooter();
+
+        // Apply zoom
         imageEl.onload = () => {
             console.log('Image loaded successfully');
-            fitImageToScreen();
-            updateInfo();
+            if (zoomMode === 'fit') {
+                applyFitZoom();
+            } else {
+                applyZoom(currentZoom);
+            }
         };
 
         imageEl.onerror = () => {
@@ -50,6 +76,74 @@ async function loadImage(path) {
     }
 }
 
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Update footer
+function updateFooter() {
+    if (viewMode === 'image' && allImages.length > 0) {
+        imagePosition.textContent = `${currentIndex + 1}/${allImages.length}`;
+        imagePosition.classList.remove('hidden');
+        zoomLevel.textContent = `Zoom: ${Math.round(currentZoom * 100)}%`;
+        zoomLevel.classList.remove('hidden');
+        thumbnailHint.classList.remove('hidden');
+        thumbnailFooter.classList.add('hidden');
+    } else if (viewMode === 'thumbnail') {
+        imagePosition.classList.add('hidden');
+        zoomLevel.classList.add('hidden');
+        thumbnailHint.classList.add('hidden');
+        thumbnailFooter.classList.remove('hidden');
+        footer.classList.add('thumbnail-mode');
+    }
+}
+
+// Apply zoom
+function applyZoom(zoom) {
+    currentZoom = Math.max(0.25, Math.min(zoom, 10)); // Limit: 25% to 1000%
+    imageEl.style.transform = `scale(${currentZoom})`;
+    imageEl.style.transformOrigin = 'center center';
+    updateFooter();
+}
+
+// Fit zoom
+function applyFitZoom() {
+    zoomMode = 'fit';
+    currentZoom = 1.0;
+    imageEl.style.transform = '';
+    imageEl.style.maxWidth = '100%';
+    imageEl.style.maxHeight = '100%';
+    updateFooter();
+}
+
+// Zoom in
+function zoomIn() {
+    zoomMode = 'manual';
+    imageEl.style.maxWidth = 'none';
+    imageEl.style.maxHeight = 'none';
+    applyZoom(currentZoom + ZOOM_STEP);
+}
+
+// Zoom out
+function zoomOut() {
+    zoomMode = 'manual';
+    imageEl.style.maxWidth = 'none';
+    imageEl.style.maxHeight = 'none';
+    applyZoom(currentZoom - ZOOM_STEP);
+}
+
+// Actual size (100%)
+function actualSize() {
+    zoomMode = 'manual';
+    imageEl.style.maxWidth = 'none';
+    imageEl.style.maxHeight = 'none';
+    applyZoom(1.0);
+}
+
+// Navigation
 async function nextImage() {
     try {
         const path = await invoke('next_image');
@@ -72,46 +166,29 @@ async function previousImage() {
     }
 }
 
-function fitImageToScreen() {
-    if (!fitToScreen) return;
-
-    const container = document.getElementById('image-container');
-    const containerWidth = container.clientWidth;
-    const containerHeight = container.clientHeight;
-    const imageWidth = imageEl.naturalWidth;
-    const imageHeight = imageEl.naturalHeight;
-
-    currentScale = calculateFitScale(imageWidth, imageHeight, containerWidth, containerHeight);
-    applyScale();
+async function firstImage() {
+    try {
+        const path = await invoke('first_image');
+        if (path) {
+            await loadImage(path);
+        }
+    } catch (error) {
+        console.error('Failed to get first image:', error);
+    }
 }
 
-function applyScale() {
-    imageEl.style.transform = `scale(${currentScale})`;
-    imageEl.style.transformOrigin = 'center center';
-    updateInfo();
+async function lastImage() {
+    try {
+        const path = await invoke('last_image');
+        if (path) {
+            await loadImage(path);
+        }
+    } catch (error) {
+        console.error('Failed to get last image:', error);
+    }
 }
 
-function updateInfo() {
-    infoEl.textContent = `${imageEl.naturalWidth} × ${imageEl.naturalHeight} (${formatZoomPercentage(currentScale)})`;
-}
-
-function zoomIn() {
-    fitToScreen = false;
-    currentScale = applyZoomIn(currentScale);
-    applyScale();
-}
-
-function zoomOut() {
-    fitToScreen = false;
-    currentScale = applyZoomOut(currentScale);
-    applyScale();
-}
-
-function resetZoom() {
-    fitToScreen = true;
-    fitImageToScreen();
-}
-
+// Open file dialog
 async function openFile() {
     console.log('openFile() called');
     try {
@@ -119,7 +196,7 @@ async function openFile() {
             multiple: false,
             filters: [{
                 name: 'Image',
-                extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']
+                extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff']
             }]
         });
 
@@ -132,70 +209,208 @@ async function openFile() {
     }
 }
 
-async function openFolder() {
-    console.log('openFolder() called');
-    try {
-        const selected = await open({
-            directory: true,
-            multiple: false
-        });
+// Toggle thumbnail view
+async function toggleThumbnailView() {
+    if (viewMode === 'image') {
+        // Switch to thumbnail view
+        viewMode = 'thumbnail';
+        imageContainer.style.display = 'none';
+        thumbnailView.classList.add('active');
+        footer.classList.add('thumbnail-mode');
+        filenameEl.textContent = `Thumbnails - ${allImages.length} images`;
+        infoEl.textContent = '';
+        updateFooter();
 
-        console.log('Selected folder:', selected);
-        if (selected) {
-            const firstImage = await invoke('load_folder', { path: selected });
-            console.log('First image from folder:', firstImage);
-            if (firstImage) {
-                await loadImage(firstImage);
-            } else {
-                filenameEl.textContent = 'No images found in folder';
-            }
+        // Generate thumbnails
+        await generateThumbnails();
+        selectedThumbnailIndex = currentIndex;
+        updateThumbnailSelection();
+    } else {
+        // Switch back to image view
+        viewMode = 'image';
+        imageContainer.style.display = 'flex';
+        thumbnailView.classList.remove('active');
+        footer.classList.remove('thumbnail-mode');
+        updateFooter();
+
+        // Reload current image info
+        if (currentPath) {
+            const result = await invoke('get_image_info', { path: currentPath });
+            const filename = currentPath.split('/').pop();
+            filenameEl.textContent = `${filename} - ${result.width} × ${result.height} - ${formatFileSize(result.size)}`;
         }
-    } catch (error) {
-        console.error('Failed to open folder:', error);
-        filenameEl.textContent = 'Error opening folder';
     }
 }
 
-// Button handlers
-console.log('Setting up button handlers');
-document.getElementById('open-btn').addEventListener('click', () => {
-    console.log('Open button clicked');
-    openFile();
-});
-document.getElementById('open-folder-btn').addEventListener('click', () => {
-    console.log('Open folder button clicked');
-    openFolder();
-});
-document.getElementById('next-btn').addEventListener('click', () => {
-    console.log('Next button clicked');
-    nextImage();
-});
-document.getElementById('prev-btn').addEventListener('click', () => {
-    console.log('Previous button clicked');
-    previousImage();
-});
+// Generate thumbnails
+async function generateThumbnails() {
+    thumbnailGrid.innerHTML = '';
+
+    for (let i = 0; i < allImages.length; i++) {
+        const imagePath = allImages[i];
+        const thumbnailItem = document.createElement('div');
+        thumbnailItem.className = 'thumbnail-item';
+        thumbnailItem.dataset.index = i;
+
+        // Create thumbnail image
+        const img = document.createElement('img');
+        const thumbnailUrl = await invoke('get_thumbnail', { path: imagePath });
+        img.src = convertFileSrc(thumbnailUrl);
+
+        thumbnailItem.appendChild(img);
+        thumbnailItem.addEventListener('click', () => selectThumbnail(i));
+
+        thumbnailGrid.appendChild(thumbnailItem);
+    }
+}
+
+// Update thumbnail selection
+function updateThumbnailSelection() {
+    const items = thumbnailGrid.querySelectorAll('.thumbnail-item');
+    items.forEach((item, index) => {
+        if (index === selectedThumbnailIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+// Select thumbnail
+function selectThumbnail(index) {
+    selectedThumbnailIndex = index;
+    updateThumbnailSelection();
+}
+
+// View selected thumbnail
+async function viewSelectedThumbnail() {
+    if (selectedThumbnailIndex >= 0 && selectedThumbnailIndex < allImages.length) {
+        await loadImage(allImages[selectedThumbnailIndex]);
+        await toggleThumbnailView();
+    }
+}
+
+// Thumbnail navigation
+function navigateThumbnails(direction) {
+    const columns = Math.floor(thumbnailGrid.offsetWidth / 165); // 150px + 15px gap
+
+    switch (direction) {
+        case 'up':
+            selectedThumbnailIndex = Math.max(0, selectedThumbnailIndex - columns);
+            break;
+        case 'down':
+            selectedThumbnailIndex = Math.min(allImages.length - 1, selectedThumbnailIndex + columns);
+            break;
+        case 'left':
+            selectedThumbnailIndex = Math.max(0, selectedThumbnailIndex - 1);
+            break;
+        case 'right':
+            selectedThumbnailIndex = Math.min(allImages.length - 1, selectedThumbnailIndex + 1);
+            break;
+    }
+
+    updateThumbnailSelection();
+}
 
 // Keyboard handlers
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') {
+document.addEventListener('keydown', async (e) => {
+    // Prevent default for navigation keys
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key)) {
         e.preventDefault();
-        nextImage();
-    } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        previousImage();
-    } else if (e.key === ' ') {
-        e.preventDefault();
-        openFile();
-    } else if (e.key === '+' || e.key === '=') {
-        e.preventDefault();
-        zoomIn();
-    } else if (e.key === '-' || e.key === '_') {
-        e.preventDefault();
-        zoomOut();
-    } else if (e.key === '0') {
-        e.preventDefault();
-        resetZoom();
     }
+
+    if (viewMode === 'image') {
+        // Image view shortcuts
+        switch (e.key) {
+            case 'ArrowRight':
+            case ' ':
+            case 'n':
+            case 'N':
+                await nextImage();
+                break;
+            case 'ArrowLeft':
+            case 'Backspace':
+            case 'p':
+            case 'P':
+                await previousImage();
+                break;
+            case 'Home':
+                await firstImage();
+                break;
+            case 'End':
+                await lastImage();
+                break;
+            case 't':
+            case 'T':
+                await toggleThumbnailView();
+                break;
+            case 'q':
+            case 'Q':
+            case 'Escape':
+                await getCurrentWindow().close();
+                break;
+            case '+':
+            case '=':
+                zoomIn();
+                break;
+            case '-':
+                zoomOut();
+                break;
+            case '0':
+                actualSize();
+                break;
+            case 'f':
+            case 'F':
+                applyFitZoom();
+                break;
+        }
+    } else {
+        // Thumbnail view shortcuts
+        switch (e.key) {
+            case 'ArrowUp':
+                navigateThumbnails('up');
+                break;
+            case 'ArrowDown':
+                navigateThumbnails('down');
+                break;
+            case 'ArrowLeft':
+                navigateThumbnails('left');
+                break;
+            case 'ArrowRight':
+                navigateThumbnails('right');
+                break;
+            case 'Enter':
+                await viewSelectedThumbnail();
+                break;
+            case 't':
+            case 'T':
+            case 'Escape':
+                await toggleThumbnailView();
+                break;
+            case 'q':
+            case 'Q':
+                await exit(0);
+                break;
+        }
+    }
+});
+
+// Mouse wheel zoom
+imageContainer.addEventListener('wheel', (e) => {
+    if (viewMode === 'image' && imageWrapper.classList.contains('loaded')) {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+            zoomIn();
+        } else {
+            zoomOut();
+        }
+    }
+});
+
+// Drop zone click to open
+dropZone.addEventListener('click', () => {
+    openFile();
 });
 
 // File drop handler
@@ -208,25 +423,10 @@ listen('tauri://drag-drop', async (event) => {
         console.log('Dropped path:', droppedPath);
 
         try {
-            // Try to load as folder first
-            const firstImage = await invoke('load_folder', { path: droppedPath });
-            if (firstImage) {
-                console.log('Loaded folder, first image:', firstImage);
-                await loadImage(firstImage);
-            } else {
-                // If folder loading returns null, try as a file
-                console.log('Not a folder or empty, trying as file');
-                await loadImage(droppedPath);
-            }
+            await loadImage(droppedPath);
         } catch (error) {
-            // If folder loading fails, try as a file
-            console.log('Folder load failed, trying as file:', error);
-            try {
-                await loadImage(droppedPath);
-            } catch (fileError) {
-                console.error('Failed to load as file:', fileError);
-                filenameEl.textContent = 'Error loading dropped item';
-            }
+            console.error('Failed to load dropped file:', error);
+            filenameEl.textContent = 'Error loading dropped item';
         }
     }
 });
@@ -243,8 +443,8 @@ dropZone.addEventListener('dragleave', () => {
 
 // Window resize handler
 window.addEventListener('resize', () => {
-    if (fitToScreen && imageEl.naturalWidth > 0) {
-        fitImageToScreen();
+    if (zoomMode === 'fit' && imageEl.naturalWidth > 0) {
+        applyFitZoom();
     }
 });
 
@@ -258,28 +458,28 @@ window.addEventListener('resize', () => {
     console.log('open-file listener registered');
 })();
 
-// OS（Finder）からファイルオープン通知を受け取った場合のイベント
+// Handle file open from OS (double-click)
 (async () => {
-  console.log('[JS] Setting up open-file-from-os listener');
-  await listen('open-file-from-os', (event) => {
-    const targetFilePath = event.payload; // 例: "/Users/naoyuki/Pictures/photo.jpg"
-    console.log("[JS] Finderから受け取った絶対パス:", targetFilePath);
-    loadImage(targetFilePath);
-  });
-  console.log('[JS] open-file-from-os listener registered');
+    console.log('[JS] Setting up open-file-from-os listener');
+    await listen('open-file-from-os', (event) => {
+        const targetFilePath = event.payload;
+        console.log("[JS] Received file from OS:", targetFilePath);
+        loadImage(targetFilePath);
+    });
+    console.log('[JS] open-file-from-os listener registered');
 
-  // リスナー登録完了後、Rust側からバッファされたファイルを取得
-  setTimeout(async () => {
-    console.log('[JS] Calling frontend_ready');
-    try {
-      const bufferedPaths = await invoke('frontend_ready');
-      console.log('[JS] frontend_ready returned:', bufferedPaths);
-      if (bufferedPaths && bufferedPaths.length > 0) {
-        console.log('[JS] Loading buffered file:', bufferedPaths[0]);
-        loadImage(bufferedPaths[0]);
-      }
-    } catch (e) {
-      console.error('[JS] frontend_ready error:', e);
-    }
-  }, 100);
+    // Get buffered files
+    setTimeout(async () => {
+        console.log('[JS] Calling frontend_ready');
+        try {
+            const bufferedPaths = await invoke('frontend_ready');
+            console.log('[JS] frontend_ready returned:', bufferedPaths);
+            if (bufferedPaths && bufferedPaths.length > 0) {
+                console.log('[JS] Loading buffered file:', bufferedPaths[0]);
+                loadImage(bufferedPaths[0]);
+            }
+        } catch (e) {
+            console.error('[JS] frontend_ready error:', e);
+        }
+    }, 100);
 })();

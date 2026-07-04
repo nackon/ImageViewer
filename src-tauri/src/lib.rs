@@ -1,12 +1,35 @@
+use image::ImageReader;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tauri::{command, State, Manager, Emitter};
 use std::sync::Mutex;
+use tauri::{command, Manager, State, WebviewWindow};
 
+#[cfg(target_os = "macos")]
+use tauri::Emitter;
+
+// ウィンドウごとの状態
+#[derive(Clone, Default)]
+struct WindowState {
+    current_images: Vec<PathBuf>,
+    current_index: usize,
+}
+
+// アプリ全体の状態（ウィンドウごとの状態を管理）
 #[derive(Default)]
 struct AppState {
-    current_images: Mutex<Vec<PathBuf>>,
-    current_index: Mutex<usize>,
-    pending_paths: Mutex<Vec<PathBuf>>, // 起動時に受け取ったファイルパスを保存
+    windows: Mutex<HashMap<String, WindowState>>,
+    pending_paths: Mutex<Vec<PathBuf>>,
+    thumbnail_cache: Mutex<HashMap<PathBuf, PathBuf>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ImageInfo {
+    width: u32,
+    height: u32,
+    size: u64,
+    images: Vec<String>,
+    index: usize,
 }
 
 fn is_image_file(path: &Path) -> bool {
@@ -29,8 +52,23 @@ fn load_images_from_directory(dir: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 #[command]
-fn load_image(path: String, state: State<AppState>) -> Result<String, String> {
+fn load_image(
+    window: WebviewWindow,
+    path: String,
+    state: State<AppState>,
+) -> Result<ImageInfo, String> {
     let path = PathBuf::from(&path);
+
+    // Get image dimensions and file size
+    let img = ImageReader::open(&path)
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+
+    let width = img.width();
+    let height = img.height();
+
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
 
     // Get parent directory
     let parent = path.parent().ok_or("No parent directory")?;
@@ -41,73 +79,197 @@ fn load_image(path: String, state: State<AppState>) -> Result<String, String> {
     // Find current image index
     let index = images.iter().position(|p| p == &path).unwrap_or(0);
 
-    *state.current_images.lock().unwrap() = images;
-    *state.current_index.lock().unwrap() = index;
+    let images_str: Vec<String> = images
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
 
-    Ok(path.to_string_lossy().to_string())
+    // ウィンドウごとの状態を更新
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
+    windows.insert(
+        window_label,
+        WindowState {
+            current_images: images,
+            current_index: index,
+        },
+    );
+
+    Ok(ImageInfo {
+        width,
+        height,
+        size,
+        images: images_str,
+        index,
+    })
 }
 
 #[command]
-fn load_folder(path: String, state: State<AppState>) -> Result<Option<String>, String> {
-    let path = PathBuf::from(&path);
+fn next_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
 
-    // Check if path is a directory
-    if !path.is_dir() {
-        return Err("Path is not a directory".to_string());
-    }
+    let window_state = windows
+        .get_mut(&window_label)
+        .ok_or("Window state not found")?;
 
-    // Find all image files in the directory
-    let images = load_images_from_directory(&path)?;
-
-    if images.is_empty() {
+    if window_state.current_images.is_empty() {
         return Ok(None);
     }
 
-    // Set first image as current
-    let first_image = images[0].clone();
-
-    *state.current_images.lock().unwrap() = images;
-    *state.current_index.lock().unwrap() = 0;
-
-    Ok(Some(first_image.to_string_lossy().to_string()))
+    window_state.current_index =
+        (window_state.current_index + 1) % window_state.current_images.len();
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
 }
 
 #[command]
-fn next_image(state: State<AppState>) -> Result<Option<String>, String> {
-    let images = state.current_images.lock().unwrap();
-    let mut index = state.current_index.lock().unwrap();
+fn previous_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
 
-    if images.is_empty() {
+    let window_state = windows
+        .get_mut(&window_label)
+        .ok_or("Window state not found")?;
+
+    if window_state.current_images.is_empty() {
         return Ok(None);
     }
 
-    *index = (*index + 1) % images.len();
-    Ok(Some(images[*index].to_string_lossy().to_string()))
-}
-
-#[command]
-fn previous_image(state: State<AppState>) -> Result<Option<String>, String> {
-    let images = state.current_images.lock().unwrap();
-    let mut index = state.current_index.lock().unwrap();
-
-    if images.is_empty() {
-        return Ok(None);
-    }
-
-    *index = if *index == 0 {
-        images.len() - 1
+    window_state.current_index = if window_state.current_index == 0 {
+        window_state.current_images.len() - 1
     } else {
-        *index - 1
+        window_state.current_index - 1
     };
 
-    Ok(Some(images[*index].to_string_lossy().to_string()))
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
 }
 
 #[command]
-fn frontend_ready(_app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<String>, String> {
-    println!("[Rust] frontend_ready command called");
+fn first_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
+
+    let window_state = windows
+        .get_mut(&window_label)
+        .ok_or("Window state not found")?;
+
+    if window_state.current_images.is_empty() {
+        return Ok(None);
+    }
+
+    window_state.current_index = 0;
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
+}
+
+#[command]
+fn last_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
+    let window_label = window.label().to_string();
+    let mut windows = state.windows.lock().unwrap();
+
+    let window_state = windows
+        .get_mut(&window_label)
+        .ok_or("Window state not found")?;
+
+    if window_state.current_images.is_empty() {
+        return Ok(None);
+    }
+
+    window_state.current_index = window_state.current_images.len() - 1;
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
+}
+
+#[command]
+fn get_image_info(path: String) -> Result<ImageInfo, String> {
+    let path = PathBuf::from(&path);
+
+    // Get image dimensions and file size
+    let img = ImageReader::open(&path)
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+
+    let width = img.width();
+    let height = img.height();
+
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+
+    Ok(ImageInfo {
+        width,
+        height,
+        size,
+        images: vec![],
+        index: 0,
+    })
+}
+
+#[command]
+fn get_thumbnail(path: String, state: State<AppState>) -> Result<String, String> {
+    let path = PathBuf::from(&path);
+
+    // Check cache first
+    {
+        let cache = state.thumbnail_cache.lock().unwrap();
+        if let Some(cached_path) = cache.get(&path) {
+            if cached_path.exists() {
+                return Ok(cached_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Generate thumbnail
+    let img = ImageReader::open(&path)
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+
+    // Resize to 150x150 maintaining aspect ratio
+    let thumbnail = img.thumbnail(150, 150);
+
+    // Save thumbnail to temp directory
+    let temp_dir = std::env::temp_dir().join("imageviewer_thumbnails");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+
+    let file_name = path.file_name().ok_or("Invalid file name")?;
+    let thumbnail_path = temp_dir.join(file_name);
+
+    thumbnail.save(&thumbnail_path).map_err(|e| e.to_string())?;
+
+    // Cache the thumbnail path
+    {
+        let mut cache = state.thumbnail_cache.lock().unwrap();
+        cache.insert(path, thumbnail_path.clone());
+    }
+
+    Ok(thumbnail_path.to_string_lossy().to_string())
+}
+
+#[command]
+fn frontend_ready(window: WebviewWindow, state: State<AppState>) -> Result<Vec<String>, String> {
+    println!(
+        "[Rust] frontend_ready command called for window: {}",
+        window.label()
+    );
     let mut paths = state.pending_paths.lock().unwrap();
-    let result: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    let result: Vec<String> = paths
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
 
     if !result.is_empty() {
         println!("[Rust] Returning {} buffered paths", result.len());
@@ -123,7 +285,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![load_image, load_folder, next_image, previous_image, frontend_ready])
+        .invoke_handler(tauri::generate_handler![
+            load_image,
+            next_image,
+            previous_image,
+            first_image,
+            last_image,
+            get_image_info,
+            get_thumbnail,
+            frontend_ready
+        ])
         .setup(|app| {
             // コマンドライン引数をチェック（アプリ起動時のダブルクリックの場合）
             let args: Vec<String> = std::env::args().collect();
@@ -160,6 +331,7 @@ pub fn run() {
         .expect("error while building tauri application");
 
     // macOS でダブルクリック（起動時・実行中問わず）されたすべてのApple Event（URL）をここでキャッチ
+    #[cfg(target_os = "macos")]
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Opened { urls } = event {
             println!("[Rust] RunEvent::Opened received, {} URLs", urls.len());
@@ -186,6 +358,9 @@ pub fn run() {
             }
         }
     });
+
+    #[cfg(not(target_os = "macos"))]
+    app.run(|_app_handle, _event| {});
 }
 
 #[cfg(test)]
@@ -195,82 +370,109 @@ mod tests {
     #[test]
     fn test_app_state_default() {
         let state = AppState::default();
-        assert!(state.current_images.lock().unwrap().is_empty());
-        assert_eq!(*state.current_index.lock().unwrap(), 0);
+        assert!(state.windows.lock().unwrap().is_empty());
         assert!(state.pending_paths.lock().unwrap().is_empty());
+        assert!(state.thumbnail_cache.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_window_state_default() {
+        let window_state = WindowState::default();
+        assert!(window_state.current_images.is_empty());
+        assert_eq!(window_state.current_index, 0);
+    }
+
+    #[test]
+    fn test_multi_window_state_isolation() {
+        let state = AppState::default();
+        let mut windows = state.windows.lock().unwrap();
+
+        // Window 1の状態
+        windows.insert(
+            "window-1".to_string(),
+            WindowState {
+                current_images: vec![
+                    PathBuf::from("/test/window1/image1.jpg"),
+                    PathBuf::from("/test/window1/image2.jpg"),
+                ],
+                current_index: 0,
+            },
+        );
+
+        // Window 2の状態
+        windows.insert(
+            "window-2".to_string(),
+            WindowState {
+                current_images: vec![
+                    PathBuf::from("/test/window2/imageA.jpg"),
+                    PathBuf::from("/test/window2/imageB.jpg"),
+                    PathBuf::from("/test/window2/imageC.jpg"),
+                ],
+                current_index: 1,
+            },
+        );
+
+        // 各ウィンドウの状態が独立していることを確認
+        let window1 = windows.get("window-1").unwrap();
+        assert_eq!(window1.current_images.len(), 2);
+        assert_eq!(window1.current_index, 0);
+
+        let window2 = windows.get("window-2").unwrap();
+        assert_eq!(window2.current_images.len(), 3);
+        assert_eq!(window2.current_index, 1);
     }
 
     #[test]
     fn test_next_image_logic() {
-        let state = AppState::default();
-
-        // Empty list
-        {
-            let images = state.current_images.lock().unwrap();
-            assert!(images.is_empty());
-        }
-
-        // Test with images
-        *state.current_images.lock().unwrap() = vec![
+        let images = [
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
             PathBuf::from("/test/image3.jpg"),
         ];
-        *state.current_index.lock().unwrap() = 0;
 
         // Next from 0 -> 1
         {
-            let images = state.current_images.lock().unwrap();
-            let mut index = state.current_index.lock().unwrap();
-            *index = (*index + 1) % images.len();
-            assert_eq!(*index, 1);
+            let index = 0;
+            let next_index = (index + 1) % images.len();
+            assert_eq!(next_index, 1);
         }
 
         // Next from 2 -> 0 (wrap around)
         {
-            *state.current_index.lock().unwrap() = 2;
-            let images = state.current_images.lock().unwrap();
-            let mut index = state.current_index.lock().unwrap();
-            *index = (*index + 1) % images.len();
-            assert_eq!(*index, 0);
+            let index = 2;
+            let next_index = (index + 1) % images.len();
+            assert_eq!(next_index, 0);
         }
     }
 
     #[test]
     fn test_previous_image_logic() {
-        let state = AppState::default();
-
-        // Test with images
-        *state.current_images.lock().unwrap() = vec![
+        let images = [
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
             PathBuf::from("/test/image3.jpg"),
         ];
-        *state.current_index.lock().unwrap() = 1;
 
         // Previous from 1 -> 0
         {
-            let images = state.current_images.lock().unwrap();
-            let mut index = state.current_index.lock().unwrap();
-            *index = if *index == 0 {
+            let index = 1;
+            let prev_index = if index == 0 {
                 images.len() - 1
             } else {
-                *index - 1
+                index - 1
             };
-            assert_eq!(*index, 0);
+            assert_eq!(prev_index, 0);
         }
 
         // Previous from 0 -> 2 (wrap around)
         {
-            *state.current_index.lock().unwrap() = 0;
-            let images = state.current_images.lock().unwrap();
-            let mut index = state.current_index.lock().unwrap();
-            *index = if *index == 0 {
+            let index = 0;
+            let prev_index = if index == 0 {
                 images.len() - 1
             } else {
-                *index - 1
+                index - 1
             };
-            assert_eq!(*index, 2);
+            assert_eq!(prev_index, 2);
         }
     }
 
@@ -291,11 +493,12 @@ mod tests {
 
     #[test]
     fn test_image_list_sorting() {
-        let mut images = vec![
+        let mut images = [
             PathBuf::from("/test/image3.jpg"),
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
-        ];
+        ]
+        .to_vec();
         images.sort();
 
         assert_eq!(images[0], PathBuf::from("/test/image1.jpg"));
