@@ -19,3 +19,8 @@ tempfile = "3.13"
 [profile.release]
 opt-level = 3
 lto = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5.2"
+objc2-app-kit = "0.2.2"
+foundation = { package = "objc2-foundation", version = "0.2.2", features = ["NSNotification", "NSDictionary", "NSArray", "NSString"] }

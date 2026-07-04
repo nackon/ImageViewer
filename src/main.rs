@@ -5,6 +5,9 @@ mod image_loader;
 mod ui;
 mod zoom;
 
+#[cfg(target_os = "macos")]
+mod macos_integration; 
+
 use app::ImageViewer;
 
 fn main() -> iced::Result {

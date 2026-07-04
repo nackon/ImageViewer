@@ -49,6 +49,7 @@ pub enum Message {
     SelectThumbnail,
     ToggleFullscreen,
     Quit,
+    FileOpenedFromMac(std::path::PathBuf), 
 }
 
 impl ImageViewer {
@@ -104,6 +105,12 @@ impl ImageViewer {
 
                 self.is_loading = false;
                 Task::none()
+            }
+            Message::FileOpenedFromMac(path) => {
+                // リポジトリ内の既存のファイル管理・読み込みロジックを呼び出す
+                // 例: self.file_manager.load_file(path) などの実装に合わせて記述
+                println!("Macからファイルを開く要求を受け取りました: {:?}", path);
+                iced::Task::none()
             }
             Message::ImageLoaded(result) => {
                 self.is_loading = false;
@@ -433,85 +440,100 @@ impl ImageViewer {
         }
     }
 
-    pub fn subscription(&self) -> iced::Subscription<Message> {
-        use iced::keyboard;
-        use iced::keyboard::key::Named;
+pub fn subscription(&self) -> iced::Subscription<Message> {
+    use iced::keyboard;
+    use iced::keyboard::key::Named;
 
-        if self.show_thumbnails {
-            iced::event::listen_with(|event, _status, _id| {
-                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(named_key),
-                    ..
-                }) = event
-                {
-                    match named_key {
-                        Named::ArrowUp => Some(Message::ThumbnailNavigate(NavigationDirection::Up)),
-                        Named::ArrowDown => {
-                            Some(Message::ThumbnailNavigate(NavigationDirection::Down))
-                        }
-                        Named::ArrowLeft => {
-                            Some(Message::ThumbnailNavigate(NavigationDirection::Left))
-                        }
-                        Named::ArrowRight => {
-                            Some(Message::ThumbnailNavigate(NavigationDirection::Right))
-                        }
-                        Named::Enter => Some(Message::SelectThumbnail),
-                        Named::Escape => Some(Message::ThumbnailAction(ThumbnailMessage::Close)),
-                        _ => None,
+    let sub = if self.show_thumbnails {
+        iced::event::listen_with(|event, _status, _id| {
+            if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(named_key),
+                ..
+            }) = event
+            {
+                match named_key {
+                    Named::ArrowUp => Some(Message::ThumbnailNavigate(NavigationDirection::Up)),
+                    Named::ArrowDown => {
+                        Some(Message::ThumbnailNavigate(NavigationDirection::Down))
                     }
-                } else if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Character(c),
-                    ..
-                }) = event
-                {
-                    match c.as_str() {
-                        "t" | "T" => Some(Message::ToggleThumbnails),
-                        _ => None,
+                    Named::ArrowLeft => {
+                        Some(Message::ThumbnailNavigate(NavigationDirection::Left))
                     }
-                } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
-                    Some(Message::WindowResized(size.width, size.height))
-                } else {
-                    None
+                    Named::ArrowRight => {
+                        Some(Message::ThumbnailNavigate(NavigationDirection::Right))
+                    }
+                    Named::Enter => Some(Message::SelectThumbnail),
+                    Named::Escape => Some(Message::ThumbnailAction(ThumbnailMessage::Close)),
+                    _ => None,
                 }
-            })
-        } else {
-            iced::event::listen_with(|event, _status, _id| {
-                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(named_key),
-                    ..
-                }) = event
-                {
-                    match named_key {
-                        Named::ArrowRight | Named::Space => Some(Message::NextImage),
-                        Named::ArrowLeft | Named::Backspace => Some(Message::PreviousImage),
-                        Named::Home => Some(Message::FirstImage),
-                        Named::End => Some(Message::LastImage),
-                        Named::Escape => Some(Message::Quit),
-                        _ => None,
-                    }
-                } else if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Character(c),
-                    ..
-                }) = event
-                {
-                    match c.as_str() {
-                        "n" | "N" => Some(Message::NextImage),
-                        "p" | "P" => Some(Message::PreviousImage),
-                        "q" | "Q" => Some(Message::Quit),
-                        "+" | "=" => Some(Message::ZoomIn),
-                        "-" => Some(Message::ZoomOut),
-                        "0" => Some(Message::ZoomActualSize),
-                        "w" | "W" => Some(Message::ZoomFit),
-                        "f" | "F" => Some(Message::ToggleFullscreen),
-                        "t" | "T" => Some(Message::ToggleThumbnails),
-                        _ => None,
-                    }
-                } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
-                    Some(Message::WindowResized(size.width, size.height))
-                } else {
-                    None
+            } else if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Character(c),
+                ..
+            }) = event
+            {
+                match c.as_str() {
+                    "t" | "T" => Some(Message::ToggleThumbnails),
+                    _ => None,
                 }
-            })
-        }
+            } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
+                Some(Message::WindowResized(size.width, size.height))
+            } else {
+                None
+            }
+        })
+    } else {
+        iced::event::listen_with(|event, _status, _id| {
+            if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(named_key),
+                ..
+            }) = event
+            {
+                match named_key {
+                    Named::ArrowRight | Named::Space => Some(Message::NextImage),
+                    Named::ArrowLeft | Named::Backspace => Some(Message::PreviousImage),
+                    Named::Home => Some(Message::FirstImage),
+                    Named::End => Some(Message::LastImage),
+                    Named::Escape => Some(Message::Quit),
+                    _ => None,
+                }
+            } else if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Character(c),
+                ..
+            }) = event
+            {
+                match c.as_str() {
+                    "n" | "N" => Some(Message::NextImage),
+                    "p" | "P" => Some(Message::PreviousImage),
+                    "q" | "Q" => Some(Message::Quit),
+                    "+" | "=" => Some(Message::ZoomIn),
+                    "-" => Some(Message::ZoomOut),
+                    "0" => Some(Message::ZoomActualSize),
+                    "w" | "W" => Some(Message::ZoomFit),
+                    "f" | "F" => Some(Message::ToggleFullscreen),
+                    "t" | "T" => Some(Message::ToggleThumbnails),
+                    _ => None,
+                }
+            } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
+                Some(Message::WindowResized(size.width, size.height))
+            } else {
+                None
+            }
+        })
+    };
+
+    // ★ iced 0.13 に適合する結合方式（Subscription::batch）に修正
+    #[cfg(target_os = "macos")]
+    {
+        iced::Subscription::batch(vec![
+            sub,
+            iced::Subscription::run(crate::macos_integration::macos_integration::listen_open_file_events)
+                .map(Message::FileOpenedFromMac),
+        ])
     }
+    #[cfg(not(target_os = "macos"))]
+    {
+        sub
+    }
+}
+
 }
