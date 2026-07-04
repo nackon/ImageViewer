@@ -1,7 +1,10 @@
-use std::path::PathBuf;
-use tauri::{command, State, Manager, Emitter, WebviewWindow};
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::{command, Manager, State, WebviewWindow};
+
+#[cfg(target_os = "macos")]
+use tauri::Emitter;
 
 // ウィンドウごとの状態
 #[derive(Clone, Default)]
@@ -14,12 +17,17 @@ struct WindowState {
 #[derive(Default)]
 struct AppState {
     windows: Mutex<HashMap<String, WindowState>>,
+    #[cfg(target_os = "macos")]
     next_window_id: Mutex<usize>,
     pending_paths: Mutex<Vec<PathBuf>>, // アプリ起動時のパスをバッファリング
 }
 
 #[command]
-fn load_image(window: WebviewWindow, path: String, state: State<AppState>) -> Result<String, String> {
+fn load_image(
+    window: WebviewWindow,
+    path: String,
+    state: State<AppState>,
+) -> Result<String, String> {
     let path = PathBuf::from(&path);
 
     // Get parent directory
@@ -33,7 +41,12 @@ fn load_image(window: WebviewWindow, path: String, state: State<AppState>) -> Re
         .filter(|p| {
             p.extension()
                 .and_then(|ext| ext.to_str())
-                .map(|ext| matches!(ext.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+                .map(|ext| {
+                    matches!(
+                        ext.to_lowercase().as_str(),
+                        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                    )
+                })
                 .unwrap_or(false)
         })
         .collect();
@@ -46,10 +59,13 @@ fn load_image(window: WebviewWindow, path: String, state: State<AppState>) -> Re
     // ウィンドウごとの状態を更新
     let window_label = window.label().to_string();
     let mut windows = state.windows.lock().unwrap();
-    windows.insert(window_label, WindowState {
-        current_images: images,
-        current_index: index,
-    });
+    windows.insert(
+        window_label,
+        WindowState {
+            current_images: images,
+            current_index: index,
+        },
+    );
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -59,15 +75,21 @@ fn next_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<St
     let window_label = window.label().to_string();
     let mut windows = state.windows.lock().unwrap();
 
-    let window_state = windows.get_mut(&window_label)
+    let window_state = windows
+        .get_mut(&window_label)
         .ok_or("Window state not found")?;
 
     if window_state.current_images.is_empty() {
         return Ok(None);
     }
 
-    window_state.current_index = (window_state.current_index + 1) % window_state.current_images.len();
-    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
+    window_state.current_index =
+        (window_state.current_index + 1) % window_state.current_images.len();
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
 }
 
 #[command]
@@ -75,7 +97,8 @@ fn previous_image(window: WebviewWindow, state: State<AppState>) -> Result<Optio
     let window_label = window.label().to_string();
     let mut windows = state.windows.lock().unwrap();
 
-    let window_state = windows.get_mut(&window_label)
+    let window_state = windows
+        .get_mut(&window_label)
         .ok_or("Window state not found")?;
 
     if window_state.current_images.is_empty() {
@@ -88,14 +111,24 @@ fn previous_image(window: WebviewWindow, state: State<AppState>) -> Result<Optio
         window_state.current_index - 1
     };
 
-    Ok(Some(window_state.current_images[window_state.current_index].to_string_lossy().to_string()))
+    Ok(Some(
+        window_state.current_images[window_state.current_index]
+            .to_string_lossy()
+            .to_string(),
+    ))
 }
 
 #[command]
 fn frontend_ready(window: WebviewWindow, state: State<AppState>) -> Result<Vec<String>, String> {
-    println!("[Rust] frontend_ready command called for window: {}", window.label());
+    println!(
+        "[Rust] frontend_ready command called for window: {}",
+        window.label()
+    );
     let mut paths = state.pending_paths.lock().unwrap();
-    let result: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    let result: Vec<String> = paths
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
 
     if !result.is_empty() {
         println!("[Rust] Returning {} buffered paths", result.len());
@@ -111,22 +144,29 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![load_image, next_image, previous_image, frontend_ready])
+        .invoke_handler(tauri::generate_handler![
+            load_image,
+            next_image,
+            previous_image,
+            frontend_ready
+        ])
         .setup(|app| {
             // コマンドライン引数をチェック（アプリ起動時のダブルクリックの場合）
             let args: Vec<String> = std::env::args().collect();
             println!("[Rust] Startup args: {:?}", args);
 
             // 画像ファイルを探す
-            let image_files: Vec<PathBuf> = args.iter().skip(1)
+            let image_files: Vec<PathBuf> = args
+                .iter()
+                .skip(1)
                 .filter(|arg| {
                     let lower = arg.to_lowercase();
-                    lower.ends_with(".jpg") ||
-                    lower.ends_with(".jpeg") ||
-                    lower.ends_with(".png") ||
-                    lower.ends_with(".gif") ||
-                    lower.ends_with(".bmp") ||
-                    lower.ends_with(".webp")
+                    lower.ends_with(".jpg")
+                        || lower.ends_with(".jpeg")
+                        || lower.ends_with(".png")
+                        || lower.ends_with(".gif")
+                        || lower.ends_with(".bmp")
+                        || lower.ends_with(".webp")
                 })
                 .map(PathBuf::from)
                 .collect();
@@ -148,6 +188,7 @@ pub fn run() {
         .expect("error while building tauri application");
 
     // macOS でダブルクリック（起動時・実行中問わず）されたすべてのApple Event（URL）をここでキャッチ
+    #[cfg(target_os = "macos")]
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Opened { urls } = event {
             println!("[Rust] RunEvent::Opened received, {} URLs", urls.len());
@@ -172,14 +213,18 @@ pub fn run() {
                         match tauri::WebviewWindowBuilder::new(
                             app_handle,
                             &window_label,
-                            tauri::WebviewUrl::App("index.html".into())
+                            tauri::WebviewUrl::App("index.html".into()),
                         )
                         .title("Image Viewer")
                         .inner_size(800.0, 600.0)
-                        .build() {
+                        .build()
+                        {
                             Ok(new_window) => {
                                 let path_str = path.to_string_lossy().to_string();
-                                println!("[Rust] New window created, emitting to: {}", window_label);
+                                println!(
+                                    "[Rust] New window created, emitting to: {}",
+                                    window_label
+                                );
                                 let _ = new_window.emit("open-file-from-os", path_str);
                             }
                             Err(e) => {
@@ -196,6 +241,9 @@ pub fn run() {
             }
         }
     });
+
+    #[cfg(not(target_os = "macos"))]
+    app.run(|_app_handle, _event| {});
 }
 
 #[cfg(test)]
@@ -206,6 +254,7 @@ mod tests {
     fn test_app_state_default() {
         let state = AppState::default();
         assert!(state.windows.lock().unwrap().is_empty());
+        #[cfg(target_os = "macos")]
         assert_eq!(*state.next_window_id.lock().unwrap(), 0);
         assert!(state.pending_paths.lock().unwrap().is_empty());
     }
@@ -223,23 +272,29 @@ mod tests {
         let mut windows = state.windows.lock().unwrap();
 
         // Window 1の状態
-        windows.insert("window-1".to_string(), WindowState {
-            current_images: vec![
-                PathBuf::from("/test/window1/image1.jpg"),
-                PathBuf::from("/test/window1/image2.jpg"),
-            ],
-            current_index: 0,
-        });
+        windows.insert(
+            "window-1".to_string(),
+            WindowState {
+                current_images: vec![
+                    PathBuf::from("/test/window1/image1.jpg"),
+                    PathBuf::from("/test/window1/image2.jpg"),
+                ],
+                current_index: 0,
+            },
+        );
 
         // Window 2の状態
-        windows.insert("window-2".to_string(), WindowState {
-            current_images: vec![
-                PathBuf::from("/test/window2/imageA.jpg"),
-                PathBuf::from("/test/window2/imageB.jpg"),
-                PathBuf::from("/test/window2/imageC.jpg"),
-            ],
-            current_index: 1,
-        });
+        windows.insert(
+            "window-2".to_string(),
+            WindowState {
+                current_images: vec![
+                    PathBuf::from("/test/window2/imageA.jpg"),
+                    PathBuf::from("/test/window2/imageB.jpg"),
+                    PathBuf::from("/test/window2/imageC.jpg"),
+                ],
+                current_index: 1,
+            },
+        );
 
         // 各ウィンドウの状態が独立していることを確認
         let window1 = windows.get("window-1").unwrap();
@@ -253,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_next_image_logic() {
-        let images = vec![
+        let images = [
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
             PathBuf::from("/test/image3.jpg"),
@@ -276,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_previous_image_logic() {
-        let images = vec![
+        let images = [
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
             PathBuf::from("/test/image3.jpg"),
@@ -310,29 +365,38 @@ mod tests {
         let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp"];
         for ext in valid_extensions {
             let path = PathBuf::from(format!("/test/image.{}", ext));
-            assert!(path.extension()
+            assert!(path
+                .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| matches!(e.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+                .map(|e| matches!(
+                    e.to_lowercase().as_str(),
+                    "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                ))
                 .unwrap_or(false));
         }
 
         let invalid_extensions = ["txt", "pdf", "doc"];
         for ext in invalid_extensions {
             let path = PathBuf::from(format!("/test/file.{}", ext));
-            assert!(!path.extension()
+            assert!(!path
+                .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| matches!(e.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+                .map(|e| matches!(
+                    e.to_lowercase().as_str(),
+                    "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                ))
                 .unwrap_or(false));
         }
     }
 
     #[test]
     fn test_image_list_sorting() {
-        let mut images = vec![
+        let mut images = [
             PathBuf::from("/test/image3.jpg"),
             PathBuf::from("/test/image1.jpg"),
             PathBuf::from("/test/image2.jpg"),
-        ];
+        ]
+        .to_vec();
         images.sort();
 
         assert_eq!(images[0], PathBuf::from("/test/image1.jpg"));
@@ -373,6 +437,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_next_window_id_increment() {
         let state = AppState::default();
 
