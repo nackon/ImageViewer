@@ -184,6 +184,7 @@ pub fn run() {
         .expect("error while building tauri application");
 
     // macOS でダブルクリック（起動時・実行中問わず）されたすべてのApple Event（URL）をここでキャッチ
+    #[cfg(target_os = "macos")]
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Opened { urls } = event {
             println!("[Rust] RunEvent::Opened received, {} URLs", urls.len());
@@ -236,6 +237,9 @@ pub fn run() {
             }
         }
     });
+
+    #[cfg(not(target_os = "macos"))]
+    app.run(|_app_handle, _event| {});
 }
 
 #[cfg(test)]
