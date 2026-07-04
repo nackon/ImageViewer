@@ -27,6 +27,7 @@ pub struct ImageViewer {
     show_thumbnails: bool,
     thumbnail_grid: ThumbnailGrid,
     is_fullscreen: bool,
+    is_loading: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,8 @@ impl ImageViewer {
     pub fn new() -> (Self, Task<Message>) {
         let args: Vec<String> = std::env::args().collect();
 
+        let has_file_arg = args.len() > 1;
+
         let viewer = Self {
             file_manager: FileManager::new(),
             image_cache: ImageCache::new(15),
@@ -65,9 +68,10 @@ impl ImageViewer {
             show_thumbnails: false,
             thumbnail_grid: ThumbnailGrid::new(),
             is_fullscreen: false,
+            is_loading: has_file_arg,
         };
 
-        if args.len() > 1 {
+        if has_file_arg {
             let path = PathBuf::from(&args[1]);
             (viewer, Task::done(Message::FileOpened(path)))
         } else {
@@ -86,8 +90,10 @@ impl ImageViewer {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::FileOpened(path) => {
+                self.is_loading = true;
                 if let Err(e) = self.file_manager.load_directory(&path) {
                     self.error_message = Some(format!("Failed to load directory: {}", e));
+                    self.is_loading = false;
                     return Task::none();
                 }
 
@@ -96,9 +102,11 @@ impl ImageViewer {
                     return self.load_image(path);
                 }
 
+                self.is_loading = false;
                 Task::none()
             }
             Message::ImageLoaded(result) => {
+                self.is_loading = false;
                 match result {
                     Ok(image_data) => {
                         self.image_cache.put(image_data.path.clone(), image_data.clone());
@@ -114,6 +122,7 @@ impl ImageViewer {
             }
             Message::NextImage => {
                 if let Some(path) = self.file_manager.next() {
+                    self.is_loading = true;
                     let path = path.clone();
                     self.load_image(path)
                 } else {
@@ -122,6 +131,7 @@ impl ImageViewer {
             }
             Message::PreviousImage => {
                 if let Some(path) = self.file_manager.previous() {
+                    self.is_loading = true;
                     let path = path.clone();
                     self.load_image(path)
                 } else {
@@ -130,6 +140,7 @@ impl ImageViewer {
             }
             Message::FirstImage => {
                 if let Some(path) = self.file_manager.first() {
+                    self.is_loading = true;
                     let path = path.clone();
                     self.load_image(path)
                 } else {
@@ -138,6 +149,7 @@ impl ImageViewer {
             }
             Message::LastImage => {
                 if let Some(path) = self.file_manager.last() {
+                    self.is_loading = true;
                     let path = path.clone();
                     self.load_image(path)
                 } else {
@@ -182,6 +194,7 @@ impl ImageViewer {
                 match thumbnail_msg {
                     ThumbnailMessage::SelectThumbnail(index) => {
                         if let Some(path) = self.file_manager.jump_to(index) {
+                            self.is_loading = true;
                             let path = path.clone();
                             self.show_thumbnails = false;
                             self.load_image(path)
@@ -202,6 +215,7 @@ impl ImageViewer {
             Message::SelectThumbnail => {
                 let selected_index = self.thumbnail_grid.selected_index();
                 if let Some(path) = self.file_manager.jump_to(selected_index) {
+                    self.is_loading = true;
                     let path = path.clone();
                     self.show_thumbnails = false;
                     self.load_image(path)
@@ -230,6 +244,8 @@ impl ImageViewer {
                 self.view_image(img)
             } else if let Some(error) = &self.error_message {
                 self.view_error(error)
+            } else if self.is_loading {
+                self.view_loading()
             } else {
                 self.view_empty()
             };
@@ -270,6 +286,18 @@ impl ImageViewer {
                 .height(Length::Fill)
                 .into()
         }
+    }
+
+    fn view_loading(&self) -> Element<'static, Message> {
+        container(
+            text("Loading...")
+                .size(24)
+                .color(Theme::TEXT),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center(Length::Fill)
+        .into()
     }
 
     fn view_empty(&self) -> Element<'static, Message> {
