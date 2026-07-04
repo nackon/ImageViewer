@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{command, Emitter, Manager, State, WebviewWindow};
+use tauri::{command, Manager, State, WebviewWindow};
+
+#[cfg(target_os = "macos")]
+use tauri::Emitter;
 
 // ウィンドウごとの状態
 #[derive(Clone, Default)]
