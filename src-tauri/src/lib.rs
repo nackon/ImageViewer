@@ -1,17 +1,42 @@
 use std::path::PathBuf;
 use tauri::{command, State, Manager, Emitter};
 use std::sync::Mutex;
+use serde::{Deserialize, Serialize};
+use image::ImageReader;
 
 #[derive(Default)]
 struct AppState {
     current_images: Mutex<Vec<PathBuf>>,
     current_index: Mutex<usize>,
-    pending_paths: Mutex<Vec<PathBuf>>, // 起動時に受け取ったファイルパスを保存
+    pending_paths: Mutex<Vec<PathBuf>>,
+    thumbnail_cache: Mutex<std::collections::HashMap<PathBuf, PathBuf>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ImageInfo {
+    width: u32,
+    height: u32,
+    size: u64,
+    images: Vec<String>,
+    index: usize,
 }
 
 #[command]
-fn load_image(path: String, state: State<AppState>) -> Result<String, String> {
+fn load_image(path: String, state: State<AppState>) -> Result<ImageInfo, String> {
     let path = PathBuf::from(&path);
+
+    // Get image dimensions and file size
+    let img = ImageReader::open(&path)
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+
+    let width = img.width();
+    let height = img.height();
+
+    let size = std::fs::metadata(&path)
+        .map_err(|e| e.to_string())?
+        .len();
 
     // Get parent directory
     let parent = path.parent().ok_or("No parent directory")?;
@@ -24,7 +49,7 @@ fn load_image(path: String, state: State<AppState>) -> Result<String, String> {
         .filter(|p| {
             p.extension()
                 .and_then(|ext| ext.to_str())
-                .map(|ext| matches!(ext.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+                .map(|ext| matches!(ext.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "tiff"))
                 .unwrap_or(false)
         })
         .collect();
@@ -34,10 +59,20 @@ fn load_image(path: String, state: State<AppState>) -> Result<String, String> {
     // Find current image index
     let index = images.iter().position(|p| p == &path).unwrap_or(0);
 
+    let images_str: Vec<String> = images.iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
     *state.current_images.lock().unwrap() = images;
     *state.current_index.lock().unwrap() = index;
 
-    Ok(path.to_string_lossy().to_string())
+    Ok(ImageInfo {
+        width,
+        height,
+        size,
+        images: images_str,
+        index,
+    })
 }
 
 #[command]
@@ -72,6 +107,99 @@ fn previous_image(state: State<AppState>) -> Result<Option<String>, String> {
 }
 
 #[command]
+fn first_image(state: State<AppState>) -> Result<Option<String>, String> {
+    let images = state.current_images.lock().unwrap();
+    let mut index = state.current_index.lock().unwrap();
+
+    if images.is_empty() {
+        return Ok(None);
+    }
+
+    *index = 0;
+    Ok(Some(images[*index].to_string_lossy().to_string()))
+}
+
+#[command]
+fn last_image(state: State<AppState>) -> Result<Option<String>, String> {
+    let images = state.current_images.lock().unwrap();
+    let mut index = state.current_index.lock().unwrap();
+
+    if images.is_empty() {
+        return Ok(None);
+    }
+
+    *index = images.len() - 1;
+    Ok(Some(images[*index].to_string_lossy().to_string()))
+}
+
+#[command]
+fn get_image_info(path: String) -> Result<ImageInfo, String> {
+    let path = PathBuf::from(&path);
+
+    // Get image dimensions and file size
+    let img = ImageReader::open(&path)
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+
+    let width = img.width();
+    let height = img.height();
+
+    let size = std::fs::metadata(&path)
+        .map_err(|e| e.to_string())?
+        .len();
+
+    Ok(ImageInfo {
+        width,
+        height,
+        size,
+        images: vec![],
+        index: 0,
+    })
+}
+
+#[command]
+fn get_thumbnail(path: String, state: State<AppState>) -> Result<String, String> {
+    let path = PathBuf::from(&path);
+
+    // Check cache first
+    {
+        let cache = state.thumbnail_cache.lock().unwrap();
+        if let Some(cached_path) = cache.get(&path) {
+            if cached_path.exists() {
+                return Ok(cached_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Generate thumbnail
+    let img = ImageReader::open(&path)
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+
+    // Resize to 150x150 maintaining aspect ratio
+    let thumbnail = img.thumbnail(150, 150);
+
+    // Save thumbnail to temp directory
+    let temp_dir = std::env::temp_dir().join("imageviewer_thumbnails");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+
+    let file_name = path.file_name().ok_or("Invalid file name")?;
+    let thumbnail_path = temp_dir.join(file_name);
+
+    thumbnail.save(&thumbnail_path).map_err(|e| e.to_string())?;
+
+    // Cache the thumbnail path
+    {
+        let mut cache = state.thumbnail_cache.lock().unwrap();
+        cache.insert(path, thumbnail_path.clone());
+    }
+
+    Ok(thumbnail_path.to_string_lossy().to_string())
+}
+
+#[command]
 fn frontend_ready(_app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<String>, String> {
     println!("[Rust] frontend_ready command called");
     let mut paths = state.pending_paths.lock().unwrap();
@@ -90,8 +218,18 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![load_image, next_image, previous_image, frontend_ready])
+        .invoke_handler(tauri::generate_handler![
+            load_image,
+            next_image,
+            previous_image,
+            first_image,
+            last_image,
+            get_image_info,
+            get_thumbnail,
+            frontend_ready
+        ])
         .setup(|app| {
             // コマンドライン引数をチェック（アプリ起動時のダブルクリックの場合）
             let args: Vec<String> = std::env::args().collect();
@@ -106,7 +244,8 @@ pub fn run() {
                     lower.ends_with(".png") ||
                     lower.ends_with(".gif") ||
                     lower.ends_with(".bmp") ||
-                    lower.ends_with(".webp")
+                    lower.ends_with(".webp") ||
+                    lower.ends_with(".tiff")
                 })
                 .map(PathBuf::from)
                 .collect();
