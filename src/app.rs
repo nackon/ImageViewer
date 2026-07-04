@@ -6,6 +6,7 @@ use crate::file_manager::FileManager;
 use crate::image_cache::ImageCache;
 use crate::image_loader::ImageData;
 use crate::ui::theme::Theme;
+use crate::ui::thumbnail::{NavigationDirection, ThumbnailGrid, ThumbnailMessage};
 use crate::zoom::ZoomCalculator;
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,8 @@ pub struct ImageViewer {
     window_width: f32,
     window_height: f32,
     error_message: Option<String>,
+    show_thumbnails: bool,
+    thumbnail_grid: ThumbnailGrid,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +40,10 @@ pub enum Message {
     ZoomFit,
     ZoomActualSize,
     WindowResized(f32, f32),
+    ToggleThumbnails,
+    ThumbnailAction(ThumbnailMessage),
+    ThumbnailNavigate(NavigationDirection),
+    SelectThumbnail,
     Quit,
 }
 
@@ -52,6 +59,8 @@ impl ImageViewer {
             window_width: 1200.0,
             window_height: 800.0,
             error_message: None,
+            show_thumbnails: false,
+            thumbnail_grid: ThumbnailGrid::new(),
         };
 
         if args.len() > 1 {
@@ -156,27 +165,71 @@ impl ImageViewer {
                 self.window_height = height;
                 Task::none()
             }
+            Message::ToggleThumbnails => {
+                self.show_thumbnails = !self.show_thumbnails;
+                if self.show_thumbnails {
+                    let files = self.file_manager.get_all_files();
+                    let current_index = self.file_manager.current_index();
+                    self.thumbnail_grid.load_files(files, current_index);
+                }
+                Task::none()
+            }
+            Message::ThumbnailAction(thumbnail_msg) => {
+                match thumbnail_msg {
+                    ThumbnailMessage::SelectThumbnail(index) => {
+                        if let Some(path) = self.file_manager.jump_to(index) {
+                            let path = path.clone();
+                            self.show_thumbnails = false;
+                            self.load_image(path)
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    ThumbnailMessage::Close => {
+                        self.show_thumbnails = false;
+                        Task::none()
+                    }
+                }
+            }
+            Message::ThumbnailNavigate(direction) => {
+                self.thumbnail_grid.move_selection(direction);
+                Task::none()
+            }
+            Message::SelectThumbnail => {
+                let selected_index = self.thumbnail_grid.selected_index();
+                if let Some(path) = self.file_manager.jump_to(selected_index) {
+                    let path = path.clone();
+                    self.show_thumbnails = false;
+                    self.load_image(path)
+                } else {
+                    Task::none()
+                }
+            }
             Message::Quit => iced::exit(),
         }
     }
 
     pub fn view(&self) -> Element<Message> {
-        let content = if let Some(img) = &self.current_image {
-            self.view_image(img)
-        } else if let Some(error) = &self.error_message {
-            self.view_error(error)
+        if self.show_thumbnails {
+            self.thumbnail_grid.view().map(Message::ThumbnailAction)
         } else {
-            self.view_empty()
-        };
+            let content = if let Some(img) = &self.current_image {
+                self.view_image(img)
+            } else if let Some(error) = &self.error_message {
+                self.view_error(error)
+            } else {
+                self.view_empty()
+            };
 
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_theme| container::Style {
-                background: Some(iced::Background::Color(Theme::BACKGROUND)),
-                ..Default::default()
-            })
-            .into()
+            container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_theme| container::Style {
+                    background: Some(iced::Background::Color(Theme::BACKGROUND)),
+                    ..Default::default()
+                })
+                .into()
+        }
     }
 
     fn view_image(&self, img: &ImageData) -> Element<Message> {
@@ -338,42 +391,82 @@ impl ImageViewer {
         use iced::keyboard;
         use iced::keyboard::key::Named;
 
-        iced::event::listen_with(|event, _status, _id| {
-            if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(named_key),
-                ..
-            }) = event
-            {
-                match named_key {
-                    Named::ArrowRight | Named::Space => Some(Message::NextImage),
-                    Named::ArrowLeft | Named::Backspace => Some(Message::PreviousImage),
-                    Named::Home => Some(Message::FirstImage),
-                    Named::End => Some(Message::LastImage),
-                    Named::Escape => Some(Message::Quit),
-                    _ => None,
+        if self.show_thumbnails {
+            iced::event::listen_with(|event, _status, _id| {
+                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(named_key),
+                    ..
+                }) = event
+                {
+                    match named_key {
+                        Named::ArrowUp => {
+                            Some(Message::ThumbnailNavigate(NavigationDirection::Up))
+                        }
+                        Named::ArrowDown => {
+                            Some(Message::ThumbnailNavigate(NavigationDirection::Down))
+                        }
+                        Named::ArrowLeft => {
+                            Some(Message::ThumbnailNavigate(NavigationDirection::Left))
+                        }
+                        Named::ArrowRight => {
+                            Some(Message::ThumbnailNavigate(NavigationDirection::Right))
+                        }
+                        Named::Enter => Some(Message::SelectThumbnail),
+                        Named::Escape => Some(Message::ThumbnailAction(ThumbnailMessage::Close)),
+                        _ => None,
+                    }
+                } else if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Character(c),
+                    ..
+                }) = event
+                {
+                    match c.as_str() {
+                        "t" | "T" => Some(Message::ToggleThumbnails),
+                        _ => None,
+                    }
+                } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
+                    Some(Message::WindowResized(size.width, size.height))
+                } else {
+                    None
                 }
-            } else if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Character(c),
-                ..
-            }) = event
-            {
-                match c.as_str() {
-                    "n" | "N" => Some(Message::NextImage),
-                    "p" | "P" => Some(Message::PreviousImage),
-                    "q" | "Q" => Some(Message::Quit),
-                    "+" | "=" => Some(Message::ZoomIn),
-                    "-" => Some(Message::ZoomOut),
-                    "0" => Some(Message::ZoomActualSize),
-                    "f" | "F" => Some(Message::ZoomFit),
-                    _ => None,
+            })
+        } else {
+            iced::event::listen_with(|event, _status, _id| {
+                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(named_key),
+                    ..
+                }) = event
+                {
+                    match named_key {
+                        Named::ArrowRight | Named::Space => Some(Message::NextImage),
+                        Named::ArrowLeft | Named::Backspace => Some(Message::PreviousImage),
+                        Named::Home => Some(Message::FirstImage),
+                        Named::End => Some(Message::LastImage),
+                        Named::Escape => Some(Message::Quit),
+                        _ => None,
+                    }
+                } else if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Character(c),
+                    ..
+                }) = event
+                {
+                    match c.as_str() {
+                        "n" | "N" => Some(Message::NextImage),
+                        "p" | "P" => Some(Message::PreviousImage),
+                        "q" | "Q" => Some(Message::Quit),
+                        "+" | "=" => Some(Message::ZoomIn),
+                        "-" => Some(Message::ZoomOut),
+                        "0" => Some(Message::ZoomActualSize),
+                        "f" | "F" => Some(Message::ZoomFit),
+                        "t" | "T" => Some(Message::ToggleThumbnails),
+                        _ => None,
+                    }
+                } else if let iced::Event::Window(iced::window::Event::Resized(size)) = event {
+                    Some(Message::WindowResized(size.width, size.height))
+                } else {
+                    None
                 }
-            } else if let iced::Event::Window(iced::window::Event::Resized(size)) =
-                event
-            {
-                Some(Message::WindowResized(size.width, size.height))
-            } else {
-                None
-            }
-        })
+            })
+        }
     }
 }

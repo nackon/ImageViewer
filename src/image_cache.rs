@@ -2,7 +2,7 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use thread_priority::{ThreadBuilder, ThreadPriority};
+use thread_priority::ThreadPriority;
 
 use crate::image_loader::ImageData;
 
@@ -65,6 +65,7 @@ impl ImageCache {
         });
     }
 
+    #[allow(dead_code)]
     pub fn cache_size(&self) -> usize {
         self.cache_size
     }
