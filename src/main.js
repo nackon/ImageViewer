@@ -57,14 +57,13 @@ async function loadImage(path) {
         // Update footer
         updateFooter();
 
+        // Reset zoom mode to fit for new image
+        zoomMode = 'fit';
+
         // Apply zoom
         imageEl.onload = () => {
             console.log('Image loaded successfully');
-            if (zoomMode === 'fit') {
-                applyFitZoom();
-            } else {
-                applyZoom(currentZoom);
-            }
+            applyFitZoom();
         };
 
         imageEl.onerror = () => {
@@ -114,8 +113,9 @@ function applyFitZoom() {
     zoomMode = 'fit';
     currentZoom = 1.0;
     imageEl.style.transform = '';
-    imageEl.style.maxWidth = '100%';
-    imageEl.style.maxHeight = '100%';
+    imageEl.style.maxWidth = '';
+    imageEl.style.maxHeight = '';
+    imageEl.style.transformOrigin = '';
     updateFooter();
 }
 
