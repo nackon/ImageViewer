@@ -254,6 +254,7 @@ mod tests {
     fn test_app_state_default() {
         let state = AppState::default();
         assert!(state.windows.lock().unwrap().is_empty());
+        #[cfg(target_os = "macos")]
         assert_eq!(*state.next_window_id.lock().unwrap(), 0);
         assert!(state.pending_paths.lock().unwrap().is_empty());
     }
@@ -436,6 +437,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_next_window_id_increment() {
         let state = AppState::default();
 
