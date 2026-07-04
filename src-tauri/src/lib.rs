@@ -6,6 +6,7 @@ use std::sync::Mutex;
 struct AppState {
     current_images: Mutex<Vec<PathBuf>>,
     current_index: Mutex<usize>,
+    pending_paths: Mutex<Vec<PathBuf>>, // 起動時に受け取ったファイルパスを保存
 }
 
 #[command]
@@ -70,45 +71,87 @@ fn previous_image(state: State<AppState>) -> Result<Option<String>, String> {
     Ok(Some(images[*index].to_string_lossy().to_string()))
 }
 
+#[command]
+fn frontend_ready(_app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<String>, String> {
+    println!("[Rust] frontend_ready command called");
+    let mut paths = state.pending_paths.lock().unwrap();
+    let result: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+
+    if !result.is_empty() {
+        println!("[Rust] Returning {} buffered paths", result.len());
+        paths.clear();
+    }
+
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![load_image, next_image, previous_image])
+        .invoke_handler(tauri::generate_handler![load_image, next_image, previous_image, frontend_ready])
         .setup(|app| {
-            // Handle file opened from Finder (macOS "Open With")
+            // コマンドライン引数をチェック（アプリ起動時のダブルクリックの場合）
             let args: Vec<String> = std::env::args().collect();
-            println!("=== Tauri startup args: {:?}", args);
+            println!("[Rust] Startup args: {:?}", args);
 
-            // Find the first image file argument
-            let file_arg = args.iter().skip(1).find(|arg| {
-                let lower = arg.to_lowercase();
-                lower.ends_with(".jpg") ||
-                lower.ends_with(".jpeg") ||
-                lower.ends_with(".png") ||
-                lower.ends_with(".gif") ||
-                lower.ends_with(".bmp") ||
-                lower.ends_with(".webp")
-            });
+            // 画像ファイルを探す
+            let image_files: Vec<PathBuf> = args.iter().skip(1)
+                .filter(|arg| {
+                    let lower = arg.to_lowercase();
+                    lower.ends_with(".jpg") ||
+                    lower.ends_with(".jpeg") ||
+                    lower.ends_with(".png") ||
+                    lower.ends_with(".gif") ||
+                    lower.ends_with(".bmp") ||
+                    lower.ends_with(".webp")
+                })
+                .map(PathBuf::from)
+                .collect();
 
-            println!("=== Found image file: {:?}", file_arg);
+            println!("[Rust] Found {} image files in args", image_files.len());
 
-            // If we found an image file, emit an event to the frontend
-            if let Some(path) = file_arg {
-                let window = app.get_webview_window("main").unwrap();
-                let path = path.clone();
-                println!("=== Emitting open-file event with path: {}", path);
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(1500));
-                    let result = window.emit("open-file", path.clone());
-                    println!("=== Event emit result: {:?}", result);
-                });
+            if !image_files.is_empty() {
+                let state: tauri::State<AppState> = app.state();
+                let mut pending = state.pending_paths.lock().unwrap();
+                for path in image_files {
+                    println!("[Rust] Buffering startup file: {}", path.display());
+                    pending.push(path);
+                }
             }
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // macOS でダブルクリック（起動時・実行中問わず）されたすべてのApple Event（URL）をここでキャッチ
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Opened { urls } = event {
+            println!("[Rust] RunEvent::Opened received, {} URLs", urls.len());
+            for url in urls {
+                println!("[Rust] URL: {}", url);
+                if let Ok(path) = url.to_file_path() {
+                    println!("[Rust] File path: {}", path.display());
+
+                    // AppStateを取得
+                    let state: tauri::State<AppState> = app_handle.state();
+
+                    // ① すでにウィンドウが存在し、フロントエンドが準備完了している場合
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let path_str = path.to_string_lossy().to_string();
+                        println!("[Rust] Window exists, emitting immediately: {}", path_str);
+                        let _ = window.emit("open-file-from-os", path_str);
+                    } else {
+                        // ② アプリ起動プロセスの途中の場合（未起動からのコールドスタート）
+                        // フロントエンドの準備ができるまで pending_paths に一旦退避させる
+                        println!("[Rust] Window not ready, buffering: {}", path.display());
+                        state.pending_paths.lock().unwrap().push(path);
+                    }
+                }
+            }
+        }
+    });
 }

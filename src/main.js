@@ -147,3 +147,29 @@ dropZone.addEventListener('dragleave', () => {
     });
     console.log('open-file listener registered');
 })();
+
+// OS（Finder）からファイルオープン通知を受け取った場合のイベント
+(async () => {
+  console.log('[JS] Setting up open-file-from-os listener');
+  await listen('open-file-from-os', (event) => {
+    const targetFilePath = event.payload; // 例: "/Users/naoyuki/Pictures/photo.jpg"
+    console.log("[JS] Finderから受け取った絶対パス:", targetFilePath);
+    loadImage(targetFilePath);
+  });
+  console.log('[JS] open-file-from-os listener registered');
+
+  // リスナー登録完了後、Rust側からバッファされたファイルを取得
+  setTimeout(async () => {
+    console.log('[JS] Calling frontend_ready');
+    try {
+      const bufferedPaths = await invoke('frontend_ready');
+      console.log('[JS] frontend_ready returned:', bufferedPaths);
+      if (bufferedPaths && bufferedPaths.length > 0) {
+        console.log('[JS] Loading buffered file:', bufferedPaths[0]);
+        loadImage(bufferedPaths[0]);
+      }
+    } catch (e) {
+      console.error('[JS] frontend_ready error:', e);
+    }
+  }, 100);
+})();
