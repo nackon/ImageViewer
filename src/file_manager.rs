@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use anyhow::Result;
+use std::path::{Path, PathBuf};
 
 pub struct FileManager {
     files: Vec<PathBuf>,
@@ -179,7 +179,9 @@ mod tests {
         create_test_images(temp_dir.path(), &image_names);
 
         let mut manager = FileManager::new();
-        manager.load_directory(&temp_dir.path().join("1.jpg")).unwrap();
+        manager
+            .load_directory(&temp_dir.path().join("1.jpg"))
+            .unwrap();
 
         assert_eq!(manager.current_index(), 0);
 
@@ -201,7 +203,9 @@ mod tests {
         create_test_images(temp_dir.path(), &image_names);
 
         let mut manager = FileManager::new();
-        manager.load_directory(&temp_dir.path().join("2.jpg")).unwrap();
+        manager
+            .load_directory(&temp_dir.path().join("2.jpg"))
+            .unwrap();
         assert_eq!(manager.current_index(), 1);
 
         manager.previous();
@@ -219,7 +223,9 @@ mod tests {
         create_test_images(temp_dir.path(), &image_names);
 
         let mut manager = FileManager::new();
-        manager.load_directory(&temp_dir.path().join("1.jpg")).unwrap();
+        manager
+            .load_directory(&temp_dir.path().join("1.jpg"))
+            .unwrap();
 
         let result = manager.jump_to(2);
         assert!(result.is_some());
@@ -237,7 +243,9 @@ mod tests {
         create_test_images(temp_dir.path(), &image_names);
 
         let mut manager = FileManager::new();
-        manager.load_directory(&temp_dir.path().join("2.jpg")).unwrap();
+        manager
+            .load_directory(&temp_dir.path().join("2.jpg"))
+            .unwrap();
 
         manager.last();
         assert_eq!(manager.current_index(), 2);
@@ -270,7 +278,9 @@ mod tests {
         create_test_images(temp_dir.path(), &image_names);
 
         let mut manager = FileManager::new();
-        manager.load_directory(&temp_dir.path().join("z.jpg")).unwrap();
+        manager
+            .load_directory(&temp_dir.path().join("z.jpg"))
+            .unwrap();
 
         let files = manager.get_all_files();
         let names: Vec<&str> = files

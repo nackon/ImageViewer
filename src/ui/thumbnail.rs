@@ -50,7 +50,7 @@ impl ThumbnailGrid {
         self.selected_index = current_index;
     }
 
-    pub fn view(&self) -> Element<ThumbnailMessage> {
+    pub fn view(&self) -> Element<'_, ThumbnailMessage> {
         let header = self.create_header();
 
         let grid = self.create_grid();
@@ -71,7 +71,7 @@ impl ThumbnailGrid {
             .into()
     }
 
-    fn create_header(&self) -> Element<ThumbnailMessage> {
+    fn create_header(&self) -> Element<'_, ThumbnailMessage> {
         let title = format!("Thumbnails - {} images", self.thumbnails.len());
 
         container(text(title).size(16).color(Theme::TEXT))
@@ -84,7 +84,7 @@ impl ThumbnailGrid {
             .into()
     }
 
-    fn create_grid(&self) -> Element<ThumbnailMessage> {
+    fn create_grid(&self) -> Element<'_, ThumbnailMessage> {
         const THUMBNAIL_SIZE: f32 = 150.0;
         const SPACING: f32 = 10.0;
         const COLUMNS: usize = 5;
@@ -103,8 +103,7 @@ impl ThumbnailGrid {
             for item in row_items {
                 let is_selected = item.index == self.selected_index;
 
-                let thumbnail_content = if let Some(handle) = self.thumbnail_cache.get(&item.path)
-                {
+                let thumbnail_content = if let Some(handle) = self.thumbnail_cache.get(&item.path) {
                     let img: Image<iced::widget::image::Handle> = image(handle.clone())
                         .width(Length::Fixed(THUMBNAIL_SIZE))
                         .height(Length::Fixed(THUMBNAIL_SIZE));
@@ -146,9 +145,7 @@ impl ThumbnailGrid {
                     .padding(5)
                     .style(move |_theme, status| {
                         let bg_color = match status {
-                            button::Status::Hovered => {
-                                iced::Color::from_rgb(0.25, 0.25, 0.25)
-                            }
+                            button::Status::Hovered => iced::Color::from_rgb(0.25, 0.25, 0.25),
                             _ => iced::Color::from_rgb(0.23, 0.23, 0.23),
                         };
 
@@ -166,9 +163,7 @@ impl ThumbnailGrid {
                 row_elements.push(btn.into());
             }
 
-            let row_widget = row(row_elements)
-                .spacing(SPACING)
-                .align_y(Alignment::Start);
+            let row_widget = row(row_elements).spacing(SPACING).align_y(Alignment::Start);
 
             grid_rows.push(row_widget.into());
         }
@@ -181,7 +176,7 @@ impl ThumbnailGrid {
             .into()
     }
 
-    fn create_footer(&self) -> Element<ThumbnailMessage> {
+    fn create_footer(&self) -> Element<'_, ThumbnailMessage> {
         let info = text("Use ↑↓←→ to navigate, Enter to view, T/Esc to close")
             .size(12)
             .color(Theme::TEXT);
