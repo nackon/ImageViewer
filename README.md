@@ -1,8 +1,8 @@
-# ImageViewer
+# ImageViewer - Tauri Prototype
 
-Rust + iced で作られた高速画像ビューア
+Simple image viewer built with Rust + Tauri.
 
-IrfanViewのMac版に相当する、軽量で高速な画像閲覧アプリケーションです。
+This is a prototype to evaluate Tauri as an alternative to Iced for building native desktop apps.
 
 ## 特徴
 

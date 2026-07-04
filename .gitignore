@@ -35,3 +35,11 @@ generate_test_images
 
 # Icon generation intermediate files
 assets/icon/AppIcon.iconset/
+
+# Node / npm
+node_modules/
+dist/
+package-lock.json
+
+# Tauri
+src-tauri/target/
