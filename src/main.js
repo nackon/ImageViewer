@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { calculateFitScale, applyZoomIn, applyZoomOut, formatZoomPercentage } from './zoom.js';
 
 console.log('=== ImageViewer JS loaded ===');
 
@@ -13,6 +14,8 @@ const dropZone = document.getElementById('drop-zone');
 console.log('Elements:', { imageEl, filenameEl, infoEl, dropZone });
 
 let currentPath = null;
+let currentScale = 1.0;
+let fitToScreen = true;
 
 async function loadImage(path) {
     try {
@@ -34,7 +37,8 @@ async function loadImage(path) {
         // Get image dimensions when loaded
         imageEl.onload = () => {
             console.log('Image loaded successfully');
-            infoEl.textContent = `${imageEl.naturalWidth} × ${imageEl.naturalHeight}`;
+            fitImageToScreen();
+            updateInfo();
         };
 
         imageEl.onerror = () => {
@@ -66,6 +70,46 @@ async function previousImage() {
     } catch (error) {
         console.error('Failed to get previous image:', error);
     }
+}
+
+function fitImageToScreen() {
+    if (!fitToScreen) return;
+
+    const container = document.getElementById('image-container');
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    const imageWidth = imageEl.naturalWidth;
+    const imageHeight = imageEl.naturalHeight;
+
+    currentScale = calculateFitScale(imageWidth, imageHeight, containerWidth, containerHeight);
+    applyScale();
+}
+
+function applyScale() {
+    imageEl.style.transform = `scale(${currentScale})`;
+    imageEl.style.transformOrigin = 'center center';
+    updateInfo();
+}
+
+function updateInfo() {
+    infoEl.textContent = `${imageEl.naturalWidth} × ${imageEl.naturalHeight} (${formatZoomPercentage(currentScale)})`;
+}
+
+function zoomIn() {
+    fitToScreen = false;
+    currentScale = applyZoomIn(currentScale);
+    applyScale();
+}
+
+function zoomOut() {
+    fitToScreen = false;
+    currentScale = applyZoomOut(currentScale);
+    applyScale();
+}
+
+function resetZoom() {
+    fitToScreen = true;
+    fitImageToScreen();
 }
 
 async function openFile() {
@@ -105,7 +149,7 @@ document.getElementById('prev-btn').addEventListener('click', () => {
 
 // Keyboard handlers
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' || e.key === ' ') {
+    if (e.key === 'ArrowRight') {
         e.preventDefault();
         nextImage();
     } else if (e.key === 'ArrowLeft') {
@@ -114,6 +158,15 @@ document.addEventListener('keydown', (e) => {
     } else if (e.key === ' ') {
         e.preventDefault();
         openFile();
+    } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        zoomIn();
+    } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomOut();
+    } else if (e.key === '0') {
+        e.preventDefault();
+        resetZoom();
     }
 });
 
@@ -136,6 +189,13 @@ dropZone.addEventListener('dragover', (e) => {
 
 dropZone.addEventListener('dragleave', () => {
     dropZone.classList.remove('active');
+});
+
+// Window resize handler
+window.addEventListener('resize', () => {
+    if (fitToScreen && imageEl.naturalWidth > 0) {
+        fitImageToScreen();
+    }
 });
 
 // Handle file opened from Finder (macOS "Open With")

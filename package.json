@@ -7,7 +7,9 @@
     "tauri": "tauri",
     "dev": "vite",
     "build": "vite build && tauri build",
-    "tauri:dev": "tauri dev"
+    "tauri:dev": "tauri dev",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.0",
@@ -16,7 +18,10 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
+    "@testing-library/dom": "^10.4.1",
     "esbuild": "^0.28.1",
-    "vite": "^8.1.3"
+    "jsdom": "^29.1.1",
+    "vite": "^8.1.3",
+    "vitest": "^4.1.9"
   }
 }
