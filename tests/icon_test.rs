@@ -49,7 +49,8 @@ fn test_icon_files_are_valid_png() {
         // PNGのマジックナンバー: 89 50 4E 47 0D 0A 1A 0A
         let png_signature: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
         assert_eq!(
-            header, png_signature,
+            header,
+            png_signature,
             "Icon file {} should be a valid PNG file",
             icon_path.display()
         );
@@ -89,8 +90,8 @@ fn test_icon_is_referenced_in_info_plist() {
 
     use std::fs;
 
-    let create_dmg_script = fs::read_to_string("create-dmg.sh")
-        .expect("Failed to read create-dmg.sh");
+    let create_dmg_script =
+        fs::read_to_string("create-dmg.sh").expect("Failed to read create-dmg.sh");
 
     assert!(
         create_dmg_script.contains("CFBundleIconFile"),
