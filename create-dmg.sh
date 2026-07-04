@@ -1,76 +1,91 @@
 #!/bin/bash
+
+# エラーが発生したら停止
 set -e
 
 APP_NAME="ImageViewer"
 VERSION="0.1.0"
-BUNDLE_NAME="${APP_NAME}.app"
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
-VOLUME_NAME="${APP_NAME}"
 
-# Colors for output
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-echo -e "${BLUE}Building ${APP_NAME} for macOS...${NC}"
-
-# Build release binary
-echo -e "${BLUE}Compiling release binary...${NC}"
+echo "Building release binary..."
 cargo build --release
 
-# Create app bundle structure
-echo -e "${BLUE}Creating app bundle structure...${NC}"
-rm -rf "${BUNDLE_NAME}"
-mkdir -p "${BUNDLE_NAME}/Contents/MacOS"
-mkdir -p "${BUNDLE_NAME}/Contents/Resources"
+# 一度ビルド先を綺麗にする
+rm -rf "target/release/${APP_NAME}.app"
+rm -rf "target/release/dmg_staging"
+rm -f "target/release/tmp.dmg"
+rm -f "${DMG_NAME}"
 
-# Copy binary
-echo -e "${BLUE}Copying binary...${NC}"
-cp target/release/image_viewer "${BUNDLE_NAME}/Contents/MacOS/${APP_NAME}"
+# ディレクトリ構造の作成
+APP_DIR="target/release/${APP_NAME}.app"
+CONTENTS_DIR="${APP_DIR}/Contents"
+MACOS_DIR="${CONTENTS_DIR}/MacOS"
+RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
-# Create Info.plist
-echo -e "${BLUE}Creating Info.plist...${NC}"
-cat > "${BUNDLE_NAME}/Contents/Info.plist" << EOF
+echo "Creating .app bundle structure..."
+mkdir -p "${MACOS_DIR}"
+mkdir -p "${RESOURCES_DIR}"
+
+echo "Copying binary and resources..."
+cp "target/release/image_viewer" "${MACOS_DIR}/"
+
+# PkgInfoの作成
+echo -n "APPL????" > "${CONTENTS_DIR}/PkgInfo"
+
+# 'EOF' で囲むことでXMLテキストをそのまま出力
+echo "Creating Info.plist..."
+cat << 'EOF' > "target/release/ImageViewer.app/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>${APP_NAME}</string>
+    <string>image_viewer</string>
     <key>CFBundleIdentifier</key>
-    <string>com.example.imageviewer</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
+    <string>com.nackon.imageviewer</string>
     <key>CFBundleName</key>
-    <string>${APP_NAME}</string>
+    <string>ImageViewer</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    <string>0.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    
     <key>LSMinimumSystemVersion</key>
     <string>10.13</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
+
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
             <key>CFBundleTypeName</key>
-            <string>Image</string>
+            <string>Supported Images</string>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>LSHandlerRank</key>
             <string>Alternate</string>
+            <key>NSDocumentClass</key>
+            <string>NSDocument</string>
+
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>jpg</string>
+                <string>jpeg</string>
+                <string>png</string>
+                <string>webp</string>
+                <string>bmp</string>
+                <string>tiff</string>
+                <string>gif</string>
+            </array>
             <key>LSItemContentTypes</key>
             <array>
                 <string>public.image</string>
-                <string>public.png</string>
                 <string>public.jpeg</string>
-                <string>com.compuserve.gif</string>
+                <string>public.png</string>
+                <string>org.webmproject.webp</string>
+                <string>com.microsoft.bmp</string>
                 <string>public.tiff</string>
+                <string>com.compuserve.gif</string>
             </array>
         </dict>
     </array>
@@ -78,35 +93,29 @@ cat > "${BUNDLE_NAME}/Contents/Info.plist" << EOF
 </plist>
 EOF
 
-# Create a simple icon (optional - you can replace with actual icon later)
-# For now, we'll skip icon creation
+# --- インストーラー形式（DMG）ビルド処理の修正版 ---
+echo "Preparing Installer DMG Staging..."
+STAGING_DIR="target/release/dmg_staging"
+mkdir -p "${STAGING_DIR}"
 
-# Create temporary DMG directory
-echo -e "${BLUE}Preparing DMG contents...${NC}"
-TEMP_DMG_DIR=$(mktemp -d)
-cp -R "${BUNDLE_NAME}" "${TEMP_DMG_DIR}/"
+# パスが崩れないよう、一度 target/release に移動してシンプルな相対パスで処理する
+cd target/release
 
-# Create symbolic link to Applications folder
-ln -s /Applications "${TEMP_DMG_DIR}/Applications"
+# ステージング環境へ .app とショートカットを配置
+cp -R "${APP_NAME}.app" "dmg_staging/"
+ln -s /Applications "dmg_staging/Applications"
 
-# Create DMG
-echo -e "${BLUE}Creating DMG...${NC}"
-rm -f "${DMG_NAME}"
+echo "Running hdiutil create..."
+# カレントディレクトリからの相対パスで確実に作成
+hdiutil create -volname "${APP_NAME} Installer" -srcfolder "dmg_staging" -ov -format UDRW "tmp.dmg"
 
-hdiutil create -volname "${VOLUME_NAME}" \
-    -srcfolder "${TEMP_DMG_DIR}" \
-    -ov \
-    -format UDZO \
-    "${DMG_NAME}"
+echo "Running hdiutil convert..."
+# カレントディレクトリからの相対パスで確実に変換
+cd ../..
+hdiutil convert "target/release/tmp.dmg" -format UDZO -o "${DMG_NAME}"
 
-# Clean up
-rm -rf "${TEMP_DMG_DIR}"
+# クリーンアップ
+rm -f "target/release/tmp.dmg"
+rm -rf "target/release/dmg_staging"
 
-echo -e "${GREEN}✓ DMG created successfully: ${DMG_NAME}${NC}"
-echo -e "${GREEN}✓ App bundle created: ${BUNDLE_NAME}${NC}"
-echo ""
-echo "To test the app:"
-echo "  open ${BUNDLE_NAME}"
-echo ""
-echo "To mount the DMG:"
-echo "  open ${DMG_NAME}"
+echo "Successfully created ${DMG_NAME} (Installer format)"
