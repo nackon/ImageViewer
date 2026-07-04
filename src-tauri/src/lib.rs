@@ -155,3 +155,157 @@ pub fn run() {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_default() {
+        let state = AppState::default();
+        assert!(state.current_images.lock().unwrap().is_empty());
+        assert_eq!(*state.current_index.lock().unwrap(), 0);
+        assert!(state.pending_paths.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_next_image_logic() {
+        let state = AppState::default();
+
+        // Empty list
+        {
+            let images = state.current_images.lock().unwrap();
+            assert!(images.is_empty());
+        }
+
+        // Test with images
+        *state.current_images.lock().unwrap() = vec![
+            PathBuf::from("/test/image1.jpg"),
+            PathBuf::from("/test/image2.jpg"),
+            PathBuf::from("/test/image3.jpg"),
+        ];
+        *state.current_index.lock().unwrap() = 0;
+
+        // Next from 0 -> 1
+        {
+            let images = state.current_images.lock().unwrap();
+            let mut index = state.current_index.lock().unwrap();
+            *index = (*index + 1) % images.len();
+            assert_eq!(*index, 1);
+        }
+
+        // Next from 2 -> 0 (wrap around)
+        {
+            *state.current_index.lock().unwrap() = 2;
+            let images = state.current_images.lock().unwrap();
+            let mut index = state.current_index.lock().unwrap();
+            *index = (*index + 1) % images.len();
+            assert_eq!(*index, 0);
+        }
+    }
+
+    #[test]
+    fn test_previous_image_logic() {
+        let state = AppState::default();
+
+        // Test with images
+        *state.current_images.lock().unwrap() = vec![
+            PathBuf::from("/test/image1.jpg"),
+            PathBuf::from("/test/image2.jpg"),
+            PathBuf::from("/test/image3.jpg"),
+        ];
+        *state.current_index.lock().unwrap() = 1;
+
+        // Previous from 1 -> 0
+        {
+            let images = state.current_images.lock().unwrap();
+            let mut index = state.current_index.lock().unwrap();
+            *index = if *index == 0 {
+                images.len() - 1
+            } else {
+                *index - 1
+            };
+            assert_eq!(*index, 0);
+        }
+
+        // Previous from 0 -> 2 (wrap around)
+        {
+            *state.current_index.lock().unwrap() = 0;
+            let images = state.current_images.lock().unwrap();
+            let mut index = state.current_index.lock().unwrap();
+            *index = if *index == 0 {
+                images.len() - 1
+            } else {
+                *index - 1
+            };
+            assert_eq!(*index, 2);
+        }
+    }
+
+    #[test]
+    fn test_image_extension_filter() {
+        let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp"];
+        for ext in valid_extensions {
+            let path = PathBuf::from(format!("/test/image.{}", ext));
+            assert!(path.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| matches!(e.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+                .unwrap_or(false));
+        }
+
+        let invalid_extensions = ["txt", "pdf", "doc"];
+        for ext in invalid_extensions {
+            let path = PathBuf::from(format!("/test/file.{}", ext));
+            assert!(!path.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| matches!(e.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+                .unwrap_or(false));
+        }
+    }
+
+    #[test]
+    fn test_image_list_sorting() {
+        let mut images = vec![
+            PathBuf::from("/test/image3.jpg"),
+            PathBuf::from("/test/image1.jpg"),
+            PathBuf::from("/test/image2.jpg"),
+        ];
+        images.sort();
+
+        assert_eq!(images[0], PathBuf::from("/test/image1.jpg"));
+        assert_eq!(images[1], PathBuf::from("/test/image2.jpg"));
+        assert_eq!(images[2], PathBuf::from("/test/image3.jpg"));
+    }
+
+    #[test]
+    fn test_pending_paths_buffer() {
+        let state = AppState::default();
+        let paths = vec![
+            PathBuf::from("/test/image1.jpg"),
+            PathBuf::from("/test/image2.jpg"),
+        ];
+
+        // Add paths to buffer
+        {
+            let mut pending = state.pending_paths.lock().unwrap();
+            for path in paths.clone() {
+                pending.push(path);
+            }
+        }
+
+        // Verify buffer contains paths
+        {
+            let pending = state.pending_paths.lock().unwrap();
+            assert_eq!(pending.len(), 2);
+            assert_eq!(pending[0], paths[0]);
+            assert_eq!(pending[1], paths[1]);
+        }
+
+        // Clear buffer
+        {
+            let mut pending = state.pending_paths.lock().unwrap();
+            pending.clear();
+            assert!(pending.is_empty());
+        }
+    }
+}
