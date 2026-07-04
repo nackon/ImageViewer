@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use anyhow::Result;
 use image::GenericImageView;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct ImageData {
@@ -149,11 +149,7 @@ mod tests {
     fn test_different_formats() {
         let temp_dir = TempDir::new().unwrap();
 
-        for (ext, width, height) in [
-            ("png", 100, 100),
-            ("jpg", 100, 100),
-            ("bmp", 50, 50),
-        ] {
+        for (ext, width, height) in [("png", 100, 100), ("jpg", 100, 100), ("bmp", 50, 50)] {
             let filename = format!("test.{}", ext);
             let image_path = create_test_image(temp_dir.path(), &filename, width, height);
 

@@ -45,7 +45,7 @@ impl ImageCache {
                 for path in paths {
                     let needs_load = {
                         let cache_guard = cache.lock().ok();
-                        cache_guard.map_or(true, |c| !c.contains(&path))
+                        cache_guard.is_none_or(|c| !c.contains(&path))
                     };
 
                     if needs_load {

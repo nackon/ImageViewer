@@ -109,7 +109,8 @@ impl ImageViewer {
                 self.is_loading = false;
                 match result {
                     Ok(image_data) => {
-                        self.image_cache.put(image_data.path.clone(), image_data.clone());
+                        self.image_cache
+                            .put(image_data.path.clone(), image_data.clone());
                         self.current_image = Some(image_data);
                         self.error_message = None;
                         self.prefetch_adjacent_images();
@@ -190,24 +191,22 @@ impl ImageViewer {
                 }
                 Task::none()
             }
-            Message::ThumbnailAction(thumbnail_msg) => {
-                match thumbnail_msg {
-                    ThumbnailMessage::SelectThumbnail(index) => {
-                        if let Some(path) = self.file_manager.jump_to(index) {
-                            self.is_loading = true;
-                            let path = path.clone();
-                            self.show_thumbnails = false;
-                            self.load_image(path)
-                        } else {
-                            Task::none()
-                        }
-                    }
-                    ThumbnailMessage::Close => {
+            Message::ThumbnailAction(thumbnail_msg) => match thumbnail_msg {
+                ThumbnailMessage::SelectThumbnail(index) => {
+                    if let Some(path) = self.file_manager.jump_to(index) {
+                        self.is_loading = true;
+                        let path = path.clone();
                         self.show_thumbnails = false;
+                        self.load_image(path)
+                    } else {
                         Task::none()
                     }
                 }
-            }
+                ThumbnailMessage::Close => {
+                    self.show_thumbnails = false;
+                    Task::none()
+                }
+            },
             Message::ThumbnailNavigate(direction) => {
                 self.thumbnail_grid.move_selection(direction);
                 Task::none()
@@ -236,7 +235,7 @@ impl ImageViewer {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         if self.show_thumbnails {
             self.thumbnail_grid.view().map(Message::ThumbnailAction)
         } else {
@@ -261,7 +260,7 @@ impl ImageViewer {
         }
     }
 
-    fn view_image(&self, img: &ImageData) -> Element<Message> {
+    fn view_image(&self, img: &ImageData) -> Element<'_, Message> {
         let scale = self.calculate_scale(img);
         let (display_width, display_height) =
             ZoomCalculator::calculate_scaled_dimensions(img.width, img.height, scale);
@@ -289,15 +288,11 @@ impl ImageViewer {
     }
 
     fn view_loading(&self) -> Element<'static, Message> {
-        container(
-            text("Loading...")
-                .size(24)
-                .color(Theme::TEXT),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center(Length::Fill)
-        .into()
+        container(text("Loading...").size(24).color(Theme::TEXT))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center(Length::Fill)
+            .into()
     }
 
     fn view_empty(&self) -> Element<'static, Message> {
@@ -327,7 +322,7 @@ impl ImageViewer {
         .into()
     }
 
-    fn create_header(&self, img: &ImageData) -> Element<Message> {
+    fn create_header(&self, img: &ImageData) -> Element<'_, Message> {
         let info = format!(
             "{} - {}x{} - {}",
             img.file_name(),
@@ -362,7 +357,9 @@ impl ImageViewer {
             text(position).size(12).color(Theme::TEXT),
             text(" | Zoom: ").size(12).color(Theme::TEXT),
             text(zoom_text).size(12).color(Theme::ACCENT),
-            text(" | [T] Thumbnails | [F] Fullscreen").size(12).color(Theme::TEXT),
+            text(" | [T] Thumbnails | [F] Fullscreen")
+                .size(12)
+                .color(Theme::TEXT),
         ]
         .spacing(5);
 
@@ -404,7 +401,7 @@ impl ImageViewer {
             async move {
                 tokio::task::spawn_blocking(move || {
                     let _ = thread_priority::set_current_thread_priority(
-                        thread_priority::ThreadPriority::Max
+                        thread_priority::ThreadPriority::Max,
                     );
                     ImageData::load(&path)
                 })
@@ -448,9 +445,7 @@ impl ImageViewer {
                 }) = event
                 {
                     match named_key {
-                        Named::ArrowUp => {
-                            Some(Message::ThumbnailNavigate(NavigationDirection::Up))
-                        }
+                        Named::ArrowUp => Some(Message::ThumbnailNavigate(NavigationDirection::Up)),
                         Named::ArrowDown => {
                             Some(Message::ThumbnailNavigate(NavigationDirection::Down))
                         }
