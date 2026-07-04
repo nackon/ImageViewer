@@ -1,5 +1,6 @@
 use iced::widget::{column, container, image, row, text, Image};
-use iced::{Alignment, Color, Element, Length, Task};
+use iced::window::Mode;
+use iced::{window, Alignment, Color, Element, Length, Task};
 use std::path::PathBuf;
 
 use crate::file_manager::FileManager;
@@ -25,6 +26,7 @@ pub struct ImageViewer {
     error_message: Option<String>,
     show_thumbnails: bool,
     thumbnail_grid: ThumbnailGrid,
+    is_fullscreen: bool,
     is_loading: bool,
 }
 
@@ -45,6 +47,7 @@ pub enum Message {
     ThumbnailAction(ThumbnailMessage),
     ThumbnailNavigate(NavigationDirection),
     SelectThumbnail,
+    ToggleFullscreen,
     Quit,
 }
 
@@ -64,6 +67,7 @@ impl ImageViewer {
             error_message: None,
             show_thumbnails: false,
             thumbnail_grid: ThumbnailGrid::new(),
+            is_fullscreen: false,
             is_loading: has_file_arg,
         };
 
@@ -219,6 +223,15 @@ impl ImageViewer {
                     Task::none()
                 }
             }
+            Message::ToggleFullscreen => {
+                self.is_fullscreen = !self.is_fullscreen;
+                let mode = if self.is_fullscreen {
+                    Mode::Fullscreen
+                } else {
+                    Mode::Windowed
+                };
+                window::get_latest().and_then(move |id| window::change_mode(id, mode))
+            }
             Message::Quit => iced::exit(),
         }
     }
@@ -249,9 +262,6 @@ impl ImageViewer {
     }
 
     fn view_image(&self, img: &ImageData) -> Element<Message> {
-        let header = self.create_header(img);
-        let footer = self.create_footer();
-
         let scale = self.calculate_scale(img);
         let (display_width, display_height) =
             ZoomCalculator::calculate_scaled_dimensions(img.width, img.height, scale);
@@ -265,10 +275,17 @@ impl ImageViewer {
             .height(Length::Fill)
             .center(Length::Fill);
 
-        column![header, image_container, footer]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        if self.is_fullscreen {
+            image_container.into()
+        } else {
+            let header = self.create_header(img);
+            let footer = self.create_footer();
+
+            column![header, image_container, footer]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        }
     }
 
     fn view_loading(&self) -> Element<'static, Message> {
@@ -345,7 +362,7 @@ impl ImageViewer {
             text(position).size(12).color(Theme::TEXT),
             text(" | Zoom: ").size(12).color(Theme::TEXT),
             text(zoom_text).size(12).color(Theme::ACCENT),
-            text(" | [T] Thumbnails").size(12).color(Theme::TEXT),
+            text(" | [T] Thumbnails | [F] Fullscreen").size(12).color(Theme::TEXT),
         ]
         .spacing(5);
 
@@ -362,7 +379,11 @@ impl ImageViewer {
     fn calculate_scale(&self, img: &ImageData) -> f32 {
         match &self.zoom_level {
             ZoomLevel::Fit => {
-                let available_height = self.window_height - 60.0;
+                let available_height = if self.is_fullscreen {
+                    self.window_height
+                } else {
+                    self.window_height - 60.0
+                };
                 ZoomCalculator::calculate_fit_scale(
                     img.width,
                     img.height,
@@ -485,7 +506,8 @@ impl ImageViewer {
                         "+" | "=" => Some(Message::ZoomIn),
                         "-" => Some(Message::ZoomOut),
                         "0" => Some(Message::ZoomActualSize),
-                        "f" | "F" => Some(Message::ZoomFit),
+                        "w" | "W" => Some(Message::ZoomFit),
+                        "f" | "F" => Some(Message::ToggleFullscreen),
                         "t" | "T" => Some(Message::ToggleThumbnails),
                         _ => None,
                     }
