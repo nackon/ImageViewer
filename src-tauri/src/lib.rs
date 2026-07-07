@@ -1,7 +1,7 @@
 use image::ImageReader;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{command, Manager, State, WebviewWindow};
 
@@ -32,6 +32,25 @@ struct ImageInfo {
     index: usize,
 }
 
+fn is_image_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| matches!(ext.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+        .unwrap_or(false)
+}
+
+fn load_images_from_directory(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut images: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|p| is_image_file(p))
+        .collect();
+
+    images.sort();
+    Ok(images)
+}
+
 #[command]
 fn load_image(
     window: WebviewWindow,
@@ -55,24 +74,7 @@ fn load_image(
     let parent = path.parent().ok_or("No parent directory")?;
 
     // Find all image files in the directory
-    let mut images: Vec<PathBuf> = std::fs::read_dir(parent)
-        .map_err(|e| e.to_string())?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|p| {
-            p.extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| {
-                    matches!(
-                        ext.to_lowercase().as_str(),
-                        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "tiff"
-                    )
-                })
-                .unwrap_or(false)
-        })
-        .collect();
-
-    images.sort();
+    let images = load_images_from_directory(parent)?;
 
     // Find current image index
     let index = images.iter().position(|p| p == &path).unwrap_or(0);
@@ -298,32 +300,30 @@ pub fn run() {
             let args: Vec<String> = std::env::args().collect();
             println!("[Rust] Startup args: {:?}", args);
 
-            // 画像ファイルを探す
-            let image_files: Vec<PathBuf> = args
-                .iter()
-                .skip(1)
-                .filter(|arg| {
-                    let lower = arg.to_lowercase();
-                    lower.ends_with(".jpg")
-                        || lower.ends_with(".jpeg")
-                        || lower.ends_with(".png")
-                        || lower.ends_with(".gif")
-                        || lower.ends_with(".bmp")
-                        || lower.ends_with(".webp")
-                })
-                .map(PathBuf::from)
-                .collect();
+            let state: tauri::State<AppState> = app.state();
+            let mut pending = state.pending_paths.lock().unwrap();
 
-            println!("[Rust] Found {} image files in args", image_files.len());
+            for arg in args.iter().skip(1) {
+                let path = PathBuf::from(arg);
 
-            if !image_files.is_empty() {
-                let state: tauri::State<AppState> = app.state();
-                let mut pending = state.pending_paths.lock().unwrap();
-                for path in image_files {
+                if path.is_file() && is_image_file(&path) {
+                    // 画像ファイルの場合
                     println!("[Rust] Buffering startup file: {}", path.display());
                     pending.push(path);
+                } else if path.is_dir() {
+                    // フォルダの場合、中の画像ファイルを全て追加
+                    println!("[Rust] Found directory argument: {}", path.display());
+                    if let Ok(images) = load_images_from_directory(&path) {
+                        println!("[Rust] Found {} images in directory", images.len());
+                        for img in images {
+                            println!("[Rust] Buffering image from dir: {}", img.display());
+                            pending.push(img);
+                        }
+                    }
                 }
             }
+
+            println!("[Rust] Total buffered paths: {}", pending.len());
 
             Ok(())
         })
@@ -481,27 +481,13 @@ mod tests {
         let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp"];
         for ext in valid_extensions {
             let path = PathBuf::from(format!("/test/image.{}", ext));
-            assert!(path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| matches!(
-                    e.to_lowercase().as_str(),
-                    "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
-                ))
-                .unwrap_or(false));
+            assert!(is_image_file(&path));
         }
 
         let invalid_extensions = ["txt", "pdf", "doc"];
         for ext in invalid_extensions {
             let path = PathBuf::from(format!("/test/file.{}", ext));
-            assert!(!path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| matches!(
-                    e.to_lowercase().as_str(),
-                    "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
-                ))
-                .unwrap_or(false));
+            assert!(!is_image_file(&path));
         }
     }
 
@@ -550,5 +536,66 @@ mod tests {
             pending.clear();
             assert!(pending.is_empty());
         }
+    }
+
+    #[test]
+    fn test_is_image_file() {
+        // Valid image extensions
+        assert!(is_image_file(&PathBuf::from("/test/image.jpg")));
+        assert!(is_image_file(&PathBuf::from("/test/image.JPG")));
+        assert!(is_image_file(&PathBuf::from("/test/image.jpeg")));
+        assert!(is_image_file(&PathBuf::from("/test/image.png")));
+        assert!(is_image_file(&PathBuf::from("/test/image.gif")));
+        assert!(is_image_file(&PathBuf::from("/test/image.bmp")));
+        assert!(is_image_file(&PathBuf::from("/test/image.webp")));
+
+        // Invalid extensions
+        assert!(!is_image_file(&PathBuf::from("/test/file.txt")));
+        assert!(!is_image_file(&PathBuf::from("/test/file.pdf")));
+        assert!(!is_image_file(&PathBuf::from("/test/file.doc")));
+        assert!(!is_image_file(&PathBuf::from("/test/file")));
+    }
+
+    #[test]
+    fn test_load_images_from_directory_with_temp_dir() {
+        use std::fs;
+
+        // Create a temporary directory
+        let temp_dir = std::env::temp_dir().join(format!("image_viewer_test_{}", std::process::id()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create test files
+        fs::write(temp_dir.join("image1.jpg"), b"fake jpg").unwrap();
+        fs::write(temp_dir.join("image2.png"), b"fake png").unwrap();
+        fs::write(temp_dir.join("not_image.txt"), b"text file").unwrap();
+        fs::write(temp_dir.join("image3.gif"), b"fake gif").unwrap();
+
+        // Test loading images
+        let images = load_images_from_directory(&temp_dir).unwrap();
+
+        // Should find 3 images (jpg, png, gif) sorted alphabetically
+        assert_eq!(images.len(), 3);
+        assert!(images[0].file_name().unwrap().to_str().unwrap().contains("image1.jpg"));
+        assert!(images[1].file_name().unwrap().to_str().unwrap().contains("image2.png"));
+        assert!(images[2].file_name().unwrap().to_str().unwrap().contains("image3.gif"));
+
+        // Clean up
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_load_images_from_empty_directory() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join(format!("image_viewer_test_empty_{}", std::process::id()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // No image files
+        fs::write(temp_dir.join("readme.txt"), b"text file").unwrap();
+
+        let images = load_images_from_directory(&temp_dir).unwrap();
+        assert_eq!(images.len(), 0);
+
+        fs::remove_dir_all(&temp_dir).unwrap();
     }
 }

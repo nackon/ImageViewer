@@ -57,14 +57,13 @@ async function loadImage(path) {
         // Update footer
         updateFooter();
 
+        // Reset zoom mode to fit for new image
+        zoomMode = 'fit';
+
         // Apply zoom
         imageEl.onload = () => {
             console.log('Image loaded successfully');
-            if (zoomMode === 'fit') {
-                applyFitZoom();
-            } else {
-                applyZoom(currentZoom);
-            }
+            applyFitZoom();
         };
 
         imageEl.onerror = () => {
@@ -114,8 +113,9 @@ function applyFitZoom() {
     zoomMode = 'fit';
     currentZoom = 1.0;
     imageEl.style.transform = '';
-    imageEl.style.maxWidth = '100%';
-    imageEl.style.maxHeight = '100%';
+    imageEl.style.maxWidth = '';
+    imageEl.style.maxHeight = '';
+    imageEl.style.transformOrigin = '';
     updateFooter();
 }
 
@@ -415,12 +415,19 @@ dropZone.addEventListener('click', () => {
 
 // File drop handler
 console.log('Setting up drag-drop listener');
-listen('tauri://drag-drop', (event) => {
+listen('tauri://drag-drop', async (event) => {
     console.log('Drag-drop event:', event);
-    const files = event.payload.paths;
-    if (files && files.length > 0) {
-        console.log('Dropped file:', files[0]);
-        loadImage(files[0]);
+    const paths = event.payload.paths;
+    if (paths && paths.length > 0) {
+        const droppedPath = paths[0];
+        console.log('Dropped path:', droppedPath);
+
+        try {
+            await loadImage(droppedPath);
+        } catch (error) {
+            console.error('Failed to load dropped file:', error);
+            filenameEl.textContent = 'Error loading dropped item';
+        }
     }
 });
 
@@ -432,6 +439,13 @@ dropZone.addEventListener('dragover', (e) => {
 
 dropZone.addEventListener('dragleave', () => {
     dropZone.classList.remove('active');
+});
+
+// Window resize handler
+window.addEventListener('resize', () => {
+    if (zoomMode === 'fit' && imageEl.naturalWidth > 0) {
+        applyFitZoom();
+    }
 });
 
 // Handle file opened from Finder (macOS "Open With")
