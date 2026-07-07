@@ -35,7 +35,12 @@ struct ImageInfo {
 fn is_image_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| matches!(ext.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"))
+        .map(|ext| {
+            matches!(
+                ext.to_lowercase().as_str(),
+                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -561,7 +566,8 @@ mod tests {
         use std::fs;
 
         // Create a temporary directory
-        let temp_dir = std::env::temp_dir().join(format!("image_viewer_test_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("image_viewer_test_{}", std::process::id()));
         fs::create_dir_all(&temp_dir).unwrap();
 
         // Create test files
@@ -575,9 +581,24 @@ mod tests {
 
         // Should find 3 images (jpg, png, gif) sorted alphabetically
         assert_eq!(images.len(), 3);
-        assert!(images[0].file_name().unwrap().to_str().unwrap().contains("image1.jpg"));
-        assert!(images[1].file_name().unwrap().to_str().unwrap().contains("image2.png"));
-        assert!(images[2].file_name().unwrap().to_str().unwrap().contains("image3.gif"));
+        assert!(images[0]
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("image1.jpg"));
+        assert!(images[1]
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("image2.png"));
+        assert!(images[2]
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("image3.gif"));
 
         // Clean up
         fs::remove_dir_all(&temp_dir).unwrap();
@@ -587,7 +608,8 @@ mod tests {
     fn test_load_images_from_empty_directory() {
         use std::fs;
 
-        let temp_dir = std::env::temp_dir().join(format!("image_viewer_test_empty_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("image_viewer_test_empty_{}", std::process::id()));
         fs::create_dir_all(&temp_dir).unwrap();
 
         // No image files
