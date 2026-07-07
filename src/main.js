@@ -120,10 +120,16 @@ function applyFitZoom() {
     if (imageEl.naturalWidth > 0 && imageEl.naturalHeight > 0) {
         const containerWidth = imageContainer.clientWidth;
         const containerHeight = imageContainer.clientHeight;
-        const scaleX = containerWidth / imageEl.naturalWidth;
-        const scaleY = containerHeight / imageEl.naturalHeight;
-        // Never scale up beyond 100%
-        currentZoom = Math.min(scaleX, scaleY, 1.0);
+
+        // If the container isn't currently visible (e.g. thumbnail view), avoid reporting 0%.
+        if (containerWidth > 0 && containerHeight > 0) {
+            const scaleX = containerWidth / imageEl.naturalWidth;
+            const scaleY = containerHeight / imageEl.naturalHeight;
+            // Never scale up beyond 100%
+            currentZoom = Math.min(scaleX, scaleY, 1.0);
+        } else {
+            currentZoom = 1.0;
+        }
     } else {
         currentZoom = 1.0;
     }
