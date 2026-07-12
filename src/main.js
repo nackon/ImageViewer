@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { toggleFullscreen, escapeAction } from './fullscreen.js';
 
 console.log('=== ImageViewer JS loaded ===');
 
@@ -365,9 +366,17 @@ document.addEventListener('keydown', async (e) => {
                 break;
             case 'q':
             case 'Q':
-            case 'Escape':
                 await getCurrentWindow().close();
                 break;
+            case 'Escape': {
+                const win = getCurrentWindow();
+                if (escapeAction(await win.isFullscreen()) === 'exit-fullscreen') {
+                    await win.setFullscreen(false);
+                } else {
+                    await win.close();
+                }
+                break;
+            }
             case '+':
             case '=':
                 zoomIn();
@@ -380,6 +389,10 @@ document.addEventListener('keydown', async (e) => {
                 break;
             case 'f':
             case 'F':
+                await toggleFullscreen(getCurrentWindow());
+                break;
+            case 'w':
+            case 'W':
                 applyFitZoom();
                 break;
         }
@@ -400,6 +413,10 @@ document.addEventListener('keydown', async (e) => {
                 break;
             case 'Enter':
                 await viewSelectedThumbnail();
+                break;
+            case 'f':
+            case 'F':
+                await toggleFullscreen(getCurrentWindow());
                 break;
             case 't':
             case 'T':
