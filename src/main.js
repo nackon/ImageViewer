@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { handleMenuAction } from './menuActions.js';
 
 console.log('=== ImageViewer JS loaded ===');
 
@@ -457,6 +458,21 @@ dropZone.addEventListener('dragover', (e) => {
 
 dropZone.addEventListener('dragleave', () => {
     dropZone.classList.remove('active');
+});
+
+// Menu bar commands (mirrors the keyboard shortcuts handled above)
+listen('menu-command', (event) => {
+    handleMenuAction(event.payload, {
+        nextImage,
+        previousImage,
+        firstImage,
+        lastImage,
+        zoomIn,
+        zoomOut,
+        actualSize,
+        applyFitZoom,
+        toggleThumbnailView,
+    });
 });
 
 // Window resize handler

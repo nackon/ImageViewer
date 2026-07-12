@@ -8,6 +8,8 @@ use tauri::{command, Manager, State, WebviewWindow};
 #[cfg(target_os = "macos")]
 use tauri::Emitter;
 
+mod menu;
+
 // ウィンドウごとの状態
 #[derive(Clone, Default)]
 struct WindowState {
@@ -290,6 +292,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::default())
+        .menu(menu::build_menu)
+        .on_menu_event(menu::handle_menu_event)
         .invoke_handler(tauri::generate_handler![
             load_image,
             next_image,
