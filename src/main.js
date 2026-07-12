@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { resolveTheme, nextThemePreference, normalizeThemePreference, themeStatusLabel } from './theme.js';
 
 console.log('=== ImageViewer JS loaded ===');
 
@@ -32,6 +33,32 @@ let selectedThumbnailIndex = 0;
 
 // Constants
 const ZOOM_STEP = 0.25; // 25%
+const THEME_STORAGE_KEY = 'themePreference';
+
+// Theme
+const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+let themePreference = normalizeThemePreference(localStorage.getItem(THEME_STORAGE_KEY));
+let themeStatusTimer = null;
+
+function applyTheme() {
+    document.documentElement.dataset.theme = resolveTheme(themePreference, darkModeQuery.matches);
+}
+
+function cycleTheme() {
+    themePreference = nextThemePreference(themePreference);
+    localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+    applyTheme();
+
+    // Briefly show the new theme in the header
+    infoEl.textContent = themeStatusLabel(themePreference, resolveTheme(themePreference, darkModeQuery.matches));
+    clearTimeout(themeStatusTimer);
+    themeStatusTimer = setTimeout(() => {
+        infoEl.textContent = '';
+    }, 2000);
+}
+
+applyTheme();
+darkModeQuery.addEventListener('change', applyTheme);
 
 // Load image
 async function loadImage(path) {
@@ -382,6 +409,10 @@ document.addEventListener('keydown', async (e) => {
             case 'F':
                 applyFitZoom();
                 break;
+            case 'd':
+            case 'D':
+                cycleTheme();
+                break;
         }
     } else {
         // Thumbnail view shortcuts
@@ -405,6 +436,10 @@ document.addEventListener('keydown', async (e) => {
             case 'T':
             case 'Escape':
                 await toggleThumbnailView();
+                break;
+            case 'd':
+            case 'D':
+                cycleTheme();
                 break;
             case 'q':
             case 'Q':
