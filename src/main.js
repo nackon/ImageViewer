@@ -461,18 +461,22 @@ dropZone.addEventListener('dragleave', () => {
 });
 
 // Menu bar commands (mirrors the keyboard shortcuts handled above)
-listen('menu-command', (event) => {
-    handleMenuAction(event.payload, {
-        nextImage,
-        previousImage,
-        firstImage,
-        lastImage,
-        zoomIn,
-        zoomOut,
-        actualSize,
-        applyFitZoom,
-        toggleThumbnailView,
-    });
+listen('menu-command', async (event) => {
+    await handleMenuAction(
+        event.payload,
+        {
+            nextImage,
+            previousImage,
+            firstImage,
+            lastImage,
+            zoomIn,
+            zoomOut,
+            actualSize,
+            applyFitZoom,
+            toggleThumbnailView,
+        },
+        { viewMode }
+    );
 });
 
 // Window resize handler
