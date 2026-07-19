@@ -102,7 +102,7 @@ make run
 ### 開発版を実行
 
 ```bash
-cargo run
+npm run tauri:dev
 # または
 make run
 ```
@@ -110,12 +110,12 @@ make run
 ### リリースビルド
 
 ```bash
-cargo build --release
+npm run tauri -- build
 # または
 make release
 ```
 
-ビルド成果物は `target/release/image_viewer` に生成されます。
+ビルド成果物は `src-tauri/target/release/bundle/macos/ImageViewer.app` に生成されます。
 
 ### macOS DMG作成
 
@@ -123,13 +123,7 @@ make release
 make dmg
 ```
 
-または直接スクリプトを実行:
-
-```bash
-./create-dmg.sh
-```
-
-`ImageViewer-0.1.0.dmg` が生成されます。
+`src-tauri/target/release/bundle/dmg/` にDMGファイルが生成されます。
 
 **注**: DMGにはアプリケーションアイコンが含まれています。アイコンは `assets/icon/` ディレクトリに配置されています。
 
