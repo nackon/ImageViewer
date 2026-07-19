@@ -277,6 +277,9 @@ async function openFile() {
 
         console.log('Selected file:', selected);
         if (selected) {
+            if (viewMode !== 'image') {
+                await toggleThumbnailView();
+            }
             await loadImage(selected);
         }
     } catch (error) {
@@ -295,6 +298,9 @@ async function openFolder() {
 
         console.log('Selected folder:', selected);
         if (selected) {
+            if (viewMode !== 'image') {
+                await toggleThumbnailView();
+            }
             await loadImage(selected);
         }
     } catch (error) {
