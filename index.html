@@ -212,6 +212,11 @@
             z-index: 100;
         }
 
+        /* Higher specificity than #shortcuts-overlay so .hidden actually hides it. */
+        #shortcuts-overlay.hidden {
+            display: none;
+        }
+
         #shortcuts-panel {
             background: var(--bar-bg);
             border: 1px solid var(--border);
