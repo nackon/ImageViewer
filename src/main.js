@@ -5,7 +5,9 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { toggleFullscreen, escapeAction } from './fullscreen.js';
 import { handleMenuAction } from './menuActions.js';
+import { resolveLoadedPath } from './loadPath.js';
 import { resolveTheme, nextThemePreference, normalizeThemePreference, themeStatusLabel } from './theme.js';
+import { shortcutsForContext, nextShortcutsHelpVisibility } from './shortcuts.js';
 
 console.log('=== ImageViewer JS loaded ===');
 
@@ -23,6 +25,8 @@ const imagePosition = document.getElementById('image-position');
 const zoomLevel = document.getElementById('zoom-level');
 const thumbnailHint = document.getElementById('thumbnail-hint');
 const thumbnailFooter = document.getElementById('thumbnail-footer');
+const shortcutsOverlay = document.getElementById('shortcuts-overlay');
+const shortcutsList = document.getElementById('shortcuts-list');
 
 // State
 let currentPath = null;
@@ -32,6 +36,7 @@ let viewMode = 'image'; // 'image' or 'thumbnail'
 let allImages = [];
 let currentIndex = 0;
 let selectedThumbnailIndex = 0;
+let shortcutsHelpVisible = false;
 
 // Constants
 const ZOOM_STEP = 0.25; // 25%
@@ -62,17 +67,40 @@ function cycleTheme() {
 applyTheme();
 darkModeQuery.addEventListener('change', applyTheme);
 
+// Shortcuts help overlay
+function renderShortcutsHelp() {
+    shortcutsList.innerHTML = '';
+    for (const shortcut of shortcutsForContext(viewMode)) {
+        const dt = document.createElement('dt');
+        dt.textContent = shortcut.keys;
+        const dd = document.createElement('dd');
+        dd.textContent = shortcut.description;
+        shortcutsList.appendChild(dt);
+        shortcutsList.appendChild(dd);
+    }
+}
+
+function setShortcutsHelpVisible(visible) {
+    shortcutsHelpVisible = visible;
+    if (visible) {
+        renderShortcutsHelp();
+    }
+    shortcutsOverlay.classList.toggle('hidden', !visible);
+}
+
 // Load image
 async function loadImage(path) {
     try {
         console.log('Loading image:', path);
         const result = await invoke('load_image', { path });
-        currentPath = path;
         allImages = result.images || [];
         currentIndex = result.index || 0;
 
+        const resolvedPath = resolveLoadedPath(path, allImages, currentIndex);
+        currentPath = resolvedPath;
+
         // Convert file path to URL
-        const assetUrl = convertFileSrc(path);
+        const assetUrl = convertFileSrc(resolvedPath);
         console.log('Asset URL:', assetUrl);
 
         imageEl.src = assetUrl;
@@ -80,7 +108,7 @@ async function loadImage(path) {
         dropZone.style.display = 'none';
 
         // Update filename and info
-        const filename = path.split('/').pop();
+        const filename = resolvedPath.split('/').pop();
         filenameEl.textContent = `${filename} - ${result.width} × ${result.height} - ${formatFileSize(result.size)}`;
 
         // Update footer
@@ -263,19 +291,17 @@ async function openFile() {
 async function openFolder() {
     console.log('openFolder() called');
     try {
-        const selected = await open({ directory: true, multiple: false });
+        const selected = await open({
+            directory: true,
+            multiple: false,
+        });
 
         console.log('Selected folder:', selected);
         if (selected) {
-            const images = await invoke('list_directory_images', { dir: selected });
-            if (images && images.length > 0) {
-                if (viewMode !== 'image') {
-                    await toggleThumbnailView();
-                }
-                await loadImage(images[0]);
-            } else {
-                filenameEl.textContent = 'No images found in folder';
+            if (viewMode !== 'image') {
+                await toggleThumbnailView();
             }
+            await loadImage(selected);
         }
     } catch (error) {
         console.error('Failed to open folder:', error);
@@ -388,6 +414,19 @@ function navigateThumbnails(direction) {
 
 // Keyboard handlers
 document.addEventListener('keydown', async (e) => {
+    // '?' always toggles the shortcuts help overlay; Escape closes it when
+    // open. While open, every other key is swallowed so it can't also
+    // trigger navigation/zoom/etc. underneath the overlay.
+    if (e.key === '?' || (shortcutsHelpVisible && e.key === 'Escape')) {
+        e.preventDefault();
+        setShortcutsHelpVisible(nextShortcutsHelpVisibility(shortcutsHelpVisible, e.key));
+        return;
+    }
+    if (shortcutsHelpVisible) {
+        e.preventDefault();
+        return;
+    }
+
     // Prevent default for navigation keys
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key)) {
         e.preventDefault();
@@ -490,6 +529,13 @@ document.addEventListener('keydown', async (e) => {
                 await exit(0);
                 break;
         }
+    }
+});
+
+// Click outside the shortcuts panel (or the panel's close button) to dismiss it
+shortcutsOverlay.addEventListener('click', (e) => {
+    if (e.target === shortcutsOverlay || e.target.closest('[data-shortcuts-close]')) {
+        setShortcutsHelpVisible(false);
     }
 });
 

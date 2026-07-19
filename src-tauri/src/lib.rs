@@ -40,7 +40,7 @@ fn is_image_file(path: &Path) -> bool {
         .map(|ext| {
             matches!(
                 ext.to_lowercase().as_str(),
-                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "tiff" | "tif"
             )
         })
         .unwrap_or(false)
@@ -58,13 +58,26 @@ fn load_images_from_directory(dir: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(images)
 }
 
+// フォルダが渡された場合は中の最初の画像に解決する（ドラッグ&ドロップ・メニュー・
+// コマンドライン引数のいずれからフォルダを渡されても同じ経路で開けるようにするため）
+fn resolve_initial_path(path: &Path) -> Result<PathBuf, String> {
+    if path.is_dir() {
+        load_images_from_directory(path)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "No images found in folder".to_string())
+    } else {
+        Ok(path.to_path_buf())
+    }
+}
+
 #[command]
 fn load_image(
     window: WebviewWindow,
     path: String,
     state: State<AppState>,
 ) -> Result<ImageInfo, String> {
-    let path = PathBuf::from(&path);
+    let path = resolve_initial_path(&PathBuf::from(&path))?;
 
     // Get image dimensions and file size
     let img = ImageReader::open(&path)
@@ -109,15 +122,6 @@ fn load_image(
         images: images_str,
         index,
     })
-}
-
-#[command]
-fn list_directory_images(dir: String) -> Result<Vec<String>, String> {
-    let images = load_images_from_directory(&PathBuf::from(dir))?;
-    Ok(images
-        .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect())
 }
 
 #[command]
@@ -310,7 +314,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             load_image,
-            list_directory_images,
             next_image,
             previous_image,
             first_image,
@@ -521,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_image_extension_filter() {
-        let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp"];
+        let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif"];
         for ext in valid_extensions {
             let path = PathBuf::from(format!("/test/image.{}", ext));
             assert!(is_image_file(&path));
@@ -591,6 +594,9 @@ mod tests {
         assert!(is_image_file(&PathBuf::from("/test/image.gif")));
         assert!(is_image_file(&PathBuf::from("/test/image.bmp")));
         assert!(is_image_file(&PathBuf::from("/test/image.webp")));
+        assert!(is_image_file(&PathBuf::from("/test/image.tiff")));
+        assert!(is_image_file(&PathBuf::from("/test/image.tif")));
+        assert!(is_image_file(&PathBuf::from("/test/image.TIFF")));
 
         // Invalid extensions
         assert!(!is_image_file(&PathBuf::from("/test/file.txt")));
@@ -660,51 +666,67 @@ mod tests {
     }
 
     #[test]
-    fn test_list_directory_images_returns_sorted_paths() {
-        use std::fs;
-        use std::time::{SystemTime, UNIX_EPOCH};
+    fn test_resolve_initial_path_passes_through_file() {
+        // A non-directory path (whether or not it exists on disk) is returned unchanged.
+        let path = PathBuf::from("/test/image1.jpg");
+        assert_eq!(resolve_initial_path(&path).unwrap(), path);
+    }
 
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+    #[test]
+    fn test_resolve_initial_path_directory_resolves_to_first_image() {
+        use std::fs;
+
         let temp_dir = std::env::temp_dir().join(format!(
-            "image_viewer_test_list_dir_{}_{}",
-            std::process::id(),
-            unique
+            "image_viewer_test_resolve_dir_{}",
+            std::process::id()
         ));
-        // Guard against a leftover directory from a previous crashed run.
-        let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
-        fs::write(temp_dir.join("b.png"), b"fake png").unwrap();
-        fs::write(temp_dir.join("a.jpg"), b"fake jpg").unwrap();
+        fs::write(temp_dir.join("b_image.png"), b"fake png").unwrap();
+        fs::write(temp_dir.join("a_image.jpg"), b"fake jpg").unwrap();
         fs::write(temp_dir.join("notes.txt"), b"text file").unwrap();
 
-        let images = list_directory_images(temp_dir.to_string_lossy().to_string()).unwrap();
+        let resolved = resolve_initial_path(&temp_dir).unwrap();
 
-        assert_eq!(images.len(), 2);
-        assert!(images[0].ends_with("a.jpg"));
-        assert!(images[1].ends_with("b.png"));
+        // Sorted alphabetically, so a_image.jpg comes before b_image.png.
+        assert_eq!(resolved, temp_dir.join("a_image.jpg"));
 
         fs::remove_dir_all(&temp_dir).unwrap();
     }
 
     #[test]
-    fn test_list_directory_images_missing_directory_errors() {
-        use std::time::{SystemTime, UNIX_EPOCH};
+    fn test_resolve_initial_path_empty_directory_errors() {
+        use std::fs;
 
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let missing_dir = std::env::temp_dir().join(format!(
-            "image_viewer_test_missing_{}_{}",
-            std::process::id(),
-            unique
+        let temp_dir = std::env::temp_dir().join(format!(
+            "image_viewer_test_resolve_empty_dir_{}",
+            std::process::id()
         ));
-        assert!(!missing_dir.exists());
+        fs::create_dir_all(&temp_dir).unwrap();
 
-        assert!(list_directory_images(missing_dir.to_string_lossy().to_string()).is_err());
+        let result = resolve_initial_path(&temp_dir);
+        assert!(result.is_err());
+
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_resolve_initial_path_directory_with_only_tiff_images() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "image_viewer_test_resolve_tiff_dir_{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        fs::write(temp_dir.join("a_image.tiff"), b"fake tiff").unwrap();
+        fs::write(temp_dir.join("b_image.tif"), b"fake tif").unwrap();
+
+        let resolved = resolve_initial_path(&temp_dir).unwrap();
+
+        assert_eq!(resolved, temp_dir.join("a_image.tiff"));
+
+        fs::remove_dir_all(&temp_dir).unwrap();
     }
 }

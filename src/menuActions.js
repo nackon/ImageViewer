@@ -12,8 +12,8 @@ export const MENU_ACTION_HANDLERS = {
   'actual-size': 'actualSize',
   'fit-to-window': 'applyFitZoom',
   'toggle-thumbnails': 'toggleThumbnailView',
-  'open-file': 'openFile',
-  'open-folder': 'openFolder',
+  'open-file-dialog': 'openFile',
+  'open-folder-dialog': 'openFolder',
 };
 
 /**
