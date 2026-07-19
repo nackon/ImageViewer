@@ -6,6 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { toggleFullscreen, escapeAction } from './fullscreen.js';
 import { handleMenuAction } from './menuActions.js';
 import { resolveTheme, nextThemePreference, normalizeThemePreference, themeStatusLabel } from './theme.js';
+import { shortcutsForContext, nextShortcutsHelpVisibility } from './shortcuts.js';
 
 console.log('=== ImageViewer JS loaded ===');
 
@@ -23,6 +24,8 @@ const imagePosition = document.getElementById('image-position');
 const zoomLevel = document.getElementById('zoom-level');
 const thumbnailHint = document.getElementById('thumbnail-hint');
 const thumbnailFooter = document.getElementById('thumbnail-footer');
+const shortcutsOverlay = document.getElementById('shortcuts-overlay');
+const shortcutsList = document.getElementById('shortcuts-list');
 
 // State
 let currentPath = null;
@@ -32,6 +35,7 @@ let viewMode = 'image'; // 'image' or 'thumbnail'
 let allImages = [];
 let currentIndex = 0;
 let selectedThumbnailIndex = 0;
+let shortcutsHelpVisible = false;
 
 // Constants
 const ZOOM_STEP = 0.25; // 25%
@@ -61,6 +65,27 @@ function cycleTheme() {
 
 applyTheme();
 darkModeQuery.addEventListener('change', applyTheme);
+
+// Shortcuts help overlay
+function renderShortcutsHelp() {
+    shortcutsList.innerHTML = '';
+    for (const { keys, description } of shortcutsForContext(viewMode)) {
+        const dt = document.createElement('dt');
+        dt.textContent = keys;
+        const dd = document.createElement('dd');
+        dd.textContent = description;
+        shortcutsList.appendChild(dt);
+        shortcutsList.appendChild(dd);
+    }
+}
+
+function setShortcutsHelpVisible(visible) {
+    shortcutsHelpVisible = visible;
+    if (visible) {
+        renderShortcutsHelp();
+    }
+    shortcutsOverlay.classList.toggle('hidden', !visible);
+}
 
 // Load image
 async function loadImage(path) {
@@ -362,6 +387,18 @@ function navigateThumbnails(direction) {
 
 // Keyboard handlers
 document.addEventListener('keydown', async (e) => {
+    // '?' always toggles the shortcuts help overlay; Escape closes it when
+    // open. While open, every other key is swallowed so it can't also
+    // trigger navigation/zoom/etc. underneath the overlay.
+    if (e.key === '?' || (shortcutsHelpVisible && e.key === 'Escape')) {
+        e.preventDefault();
+        setShortcutsHelpVisible(nextShortcutsHelpVisibility(shortcutsHelpVisible, e.key));
+        return;
+    }
+    if (shortcutsHelpVisible) {
+        return;
+    }
+
     // Prevent default for navigation keys
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key)) {
         e.preventDefault();
@@ -464,6 +501,13 @@ document.addEventListener('keydown', async (e) => {
                 await exit(0);
                 break;
         }
+    }
+});
+
+// Click outside the shortcuts panel (or the panel's close button) to dismiss it
+shortcutsOverlay.addEventListener('click', (e) => {
+    if (e.target === shortcutsOverlay || e.target.closest('[data-shortcuts-close]')) {
+        setShortcutsHelpVisible(false);
     }
 });
 
