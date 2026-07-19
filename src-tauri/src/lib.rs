@@ -112,6 +112,15 @@ fn load_image(
 }
 
 #[command]
+fn list_directory_images(dir: String) -> Result<Vec<String>, String> {
+    let images = load_images_from_directory(&PathBuf::from(dir))?;
+    Ok(images
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect())
+}
+
+#[command]
 fn next_image(window: WebviewWindow, state: State<AppState>) -> Result<Option<String>, String> {
     let window_label = window.label().to_string();
     let mut windows = state.windows.lock().unwrap();
@@ -301,6 +310,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             load_image,
+            list_directory_images,
             next_image,
             previous_image,
             first_image,
@@ -647,5 +657,34 @@ mod tests {
         assert_eq!(images.len(), 0);
 
         fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_list_directory_images_returns_sorted_paths() {
+        use std::fs;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("image_viewer_test_list_dir_{}", std::process::id()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        fs::write(temp_dir.join("b.png"), b"fake png").unwrap();
+        fs::write(temp_dir.join("a.jpg"), b"fake jpg").unwrap();
+        fs::write(temp_dir.join("notes.txt"), b"text file").unwrap();
+
+        let images = list_directory_images(temp_dir.to_string_lossy().to_string()).unwrap();
+
+        assert_eq!(images.len(), 2);
+        assert!(images[0].ends_with("a.jpg"));
+        assert!(images[1].ends_with("b.png"));
+
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_list_directory_images_missing_directory_errors() {
+        let missing_dir =
+            std::env::temp_dir().join(format!("image_viewer_test_missing_{}", std::process::id()));
+
+        assert!(list_directory_images(missing_dir.to_string_lossy().to_string()).is_err());
     }
 }

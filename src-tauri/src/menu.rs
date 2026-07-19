@@ -12,6 +12,8 @@ pub const ACTION_ZOOM_OUT: &str = "zoom-out";
 pub const ACTION_ACTUAL_SIZE: &str = "actual-size";
 pub const ACTION_FIT_TO_WINDOW: &str = "fit-to-window";
 pub const ACTION_TOGGLE_THUMBNAILS: &str = "toggle-thumbnails";
+pub const ACTION_OPEN_FILE: &str = "open-file";
+pub const ACTION_OPEN_FOLDER: &str = "open-folder";
 
 /// All ids that should be forwarded to the frontend as a `menu-command` event.
 const FORWARDED_ACTIONS: &[&str] = &[
@@ -24,6 +26,8 @@ const FORWARDED_ACTIONS: &[&str] = &[
     ACTION_ACTUAL_SIZE,
     ACTION_FIT_TO_WINDOW,
     ACTION_TOGGLE_THUMBNAILS,
+    ACTION_OPEN_FILE,
+    ACTION_OPEN_FOLDER,
 ];
 
 /// Builds the application menu bar. Every command that already has a
@@ -83,24 +87,24 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "File",
         true,
         &[
+            &MenuItem::with_id(
+                app,
+                ACTION_OPEN_FILE,
+                "Open File...",
+                true,
+                Some("CmdOrCtrl+O"),
+            )?,
+            &MenuItem::with_id(
+                app,
+                ACTION_OPEN_FOLDER,
+                "Open Folder...",
+                true,
+                Some("CmdOrCtrl+Shift+O"),
+            )?,
+            &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
             #[cfg(not(target_os = "macos"))]
             &PredefinedMenuItem::quit(app, None)?,
-        ],
-    )?;
-
-    let edit_menu = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
         ],
     )?;
 
@@ -151,7 +155,6 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &[
                 &app_menu,
                 &file_menu,
-                &edit_menu,
                 &go_menu,
                 &view_menu,
                 &window_menu,
@@ -164,14 +167,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     {
         Menu::with_items(
             app,
-            &[
-                &file_menu,
-                &edit_menu,
-                &go_menu,
-                &view_menu,
-                &window_menu,
-                &help_menu,
-            ],
+            &[&file_menu, &go_menu, &view_menu, &window_menu, &help_menu],
         )
     }
 }

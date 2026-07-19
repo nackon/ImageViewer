@@ -256,6 +256,26 @@ async function openFile() {
     }
 }
 
+// Open folder dialog
+async function openFolder() {
+    console.log('openFolder() called');
+    try {
+        const selected = await open({ directory: true, multiple: false });
+
+        console.log('Selected folder:', selected);
+        if (selected) {
+            const images = await invoke('list_directory_images', { dir: selected });
+            if (images && images.length > 0) {
+                await loadImage(images[0]);
+            } else {
+                filenameEl.textContent = 'No images found in folder';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to open folder:', error);
+    }
+}
+
 // Toggle thumbnail view
 async function toggleThumbnailView() {
     if (viewMode === 'image') {
@@ -524,6 +544,8 @@ listen('menu-command', (event) => {
         actualSize,
         applyFitZoom,
         toggleThumbnailView,
+        openFile,
+        openFolder,
     });
 });
 
