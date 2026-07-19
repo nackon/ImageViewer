@@ -307,6 +307,11 @@ pub fn run() {
         .manage(AppState::default())
         .menu(menu::build_menu)
         .on_menu_event(menu::handle_menu_event)
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                window.app_handle().exit(0);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             load_image,
             next_image,
@@ -388,6 +393,25 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Regression test for issue #18: pressing Q (or Escape outside fullscreen)
+    // calls `getCurrentWindow().close()` from the frontend, which requires
+    // this permission. Without it the call silently fails (unhandled promise
+    // rejection) and the window never closes.
+    #[test]
+    fn capabilities_grant_window_close_permission() {
+        let capabilities: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json"))
+                .expect("capabilities/default.json should be valid JSON");
+        let permissions = capabilities["permissions"]
+            .as_array()
+            .expect("permissions should be an array");
+        assert!(
+            permissions.iter().any(|p| p == "core:window:allow-close"),
+            "capabilities/default.json must grant core:window:allow-close so the \
+             frontend can actually close the window (see issue #18)"
+        );
+    }
 
     #[test]
     fn test_app_state_default() {
