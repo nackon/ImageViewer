@@ -16,14 +16,22 @@ const indexHtmlPath = path.join(
 const html = readFileSync(indexHtmlPath, 'utf-8');
 
 beforeAll(() => {
-  const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
-  const bodyMatch = html.match(/<body>([\s\S]*)<\/body>/);
-  document.head.innerHTML = `<style>${styleMatch[1]}</style>`;
-  document.body.innerHTML = bodyMatch[1];
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  const styleEl = doc.querySelector('style');
+  if (!styleEl) {
+    throw new Error('index.html has no <style> element to load into the test document');
+  }
+  if (!doc.getElementById('shortcuts-overlay')) {
+    throw new Error('index.html has no #shortcuts-overlay element');
+  }
+
+  document.head.innerHTML = `<style>${styleEl.textContent}</style>`;
+  document.body.innerHTML = doc.body.innerHTML;
 });
 
 describe('shortcuts overlay visibility (index.html)', () => {
-  it('is not marked hidden by class alone (would already fail here on regression)', () => {
+  it('has the "hidden" class in the markup by default', () => {
     const overlay = document.getElementById('shortcuts-overlay');
     expect(overlay.classList.contains('hidden')).toBe(true);
   });
@@ -36,7 +44,10 @@ describe('shortcuts overlay visibility (index.html)', () => {
   it('is displayed once the hidden class is removed', () => {
     const overlay = document.getElementById('shortcuts-overlay');
     overlay.classList.remove('hidden');
-    expect(getComputedStyle(overlay).display).toBe('flex');
-    overlay.classList.add('hidden');
+    try {
+      expect(getComputedStyle(overlay).display).toBe('flex');
+    } finally {
+      overlay.classList.add('hidden');
+    }
   });
 });
