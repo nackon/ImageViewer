@@ -5,6 +5,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { toggleFullscreen, escapeAction } from './fullscreen.js';
 import { handleMenuAction } from './menuActions.js';
+import { resolveLoadedPath } from './loadPath.js';
 import { resolveTheme, nextThemePreference, normalizeThemePreference, themeStatusLabel } from './theme.js';
 
 console.log('=== ImageViewer JS loaded ===');
@@ -67,12 +68,14 @@ async function loadImage(path) {
     try {
         console.log('Loading image:', path);
         const result = await invoke('load_image', { path });
-        currentPath = path;
         allImages = result.images || [];
         currentIndex = result.index || 0;
 
+        const resolvedPath = resolveLoadedPath(path, allImages, currentIndex);
+        currentPath = resolvedPath;
+
         // Convert file path to URL
-        const assetUrl = convertFileSrc(path);
+        const assetUrl = convertFileSrc(resolvedPath);
         console.log('Asset URL:', assetUrl);
 
         imageEl.src = assetUrl;
@@ -80,7 +83,7 @@ async function loadImage(path) {
         dropZone.style.display = 'none';
 
         // Update filename and info
-        const filename = path.split('/').pop();
+        const filename = resolvedPath.split('/').pop();
         filenameEl.textContent = `${filename} - ${result.width} × ${result.height} - ${formatFileSize(result.size)}`;
 
         // Update footer
@@ -253,6 +256,24 @@ async function openFile() {
         }
     } catch (error) {
         console.error('Failed to open file:', error);
+    }
+}
+
+// Open folder dialog
+async function openFolder() {
+    console.log('openFolder() called');
+    try {
+        const selected = await open({
+            directory: true,
+            multiple: false,
+        });
+
+        console.log('Selected folder:', selected);
+        if (selected) {
+            await loadImage(selected);
+        }
+    } catch (error) {
+        console.error('Failed to open folder:', error);
     }
 }
 
@@ -524,6 +545,8 @@ listen('menu-command', (event) => {
         actualSize,
         applyFitZoom,
         toggleThumbnailView,
+        openFile,
+        openFolder,
     });
 });
 
