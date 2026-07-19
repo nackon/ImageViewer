@@ -58,13 +58,26 @@ fn load_images_from_directory(dir: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(images)
 }
 
+// フォルダが渡された場合は中の最初の画像に解決する（ドラッグ&ドロップ・メニュー・
+// コマンドライン引数のいずれからフォルダを渡されても同じ経路で開けるようにするため）
+fn resolve_initial_path(path: &Path) -> Result<PathBuf, String> {
+    if path.is_dir() {
+        load_images_from_directory(path)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "No images found in folder".to_string())
+    } else {
+        Ok(path.to_path_buf())
+    }
+}
+
 #[command]
 fn load_image(
     window: WebviewWindow,
     path: String,
     state: State<AppState>,
 ) -> Result<ImageInfo, String> {
-    let path = PathBuf::from(&path);
+    let path = resolve_initial_path(&PathBuf::from(&path))?;
 
     // Get image dimensions and file size
     let img = ImageReader::open(&path)
@@ -621,6 +634,51 @@ mod tests {
 
         let images = load_images_from_directory(&temp_dir).unwrap();
         assert_eq!(images.len(), 0);
+
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_resolve_initial_path_passes_through_file() {
+        // A non-directory path (whether or not it exists on disk) is returned unchanged.
+        let path = PathBuf::from("/test/image1.jpg");
+        assert_eq!(resolve_initial_path(&path).unwrap(), path);
+    }
+
+    #[test]
+    fn test_resolve_initial_path_directory_resolves_to_first_image() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "image_viewer_test_resolve_dir_{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        fs::write(temp_dir.join("b_image.png"), b"fake png").unwrap();
+        fs::write(temp_dir.join("a_image.jpg"), b"fake jpg").unwrap();
+        fs::write(temp_dir.join("notes.txt"), b"text file").unwrap();
+
+        let resolved = resolve_initial_path(&temp_dir).unwrap();
+
+        // Sorted alphabetically, so a_image.jpg comes before b_image.png.
+        assert_eq!(resolved, temp_dir.join("a_image.jpg"));
+
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_resolve_initial_path_empty_directory_errors() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "image_viewer_test_resolve_empty_dir_{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let result = resolve_initial_path(&temp_dir);
+        assert!(result.is_err());
 
         fs::remove_dir_all(&temp_dir).unwrap();
     }

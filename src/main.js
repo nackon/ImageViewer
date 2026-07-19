@@ -256,6 +256,24 @@ async function openFile() {
     }
 }
 
+// Open folder dialog
+async function openFolder() {
+    console.log('openFolder() called');
+    try {
+        const selected = await open({
+            directory: true,
+            multiple: false,
+        });
+
+        console.log('Selected folder:', selected);
+        if (selected) {
+            await loadImage(selected);
+        }
+    } catch (error) {
+        console.error('Failed to open folder:', error);
+    }
+}
+
 // Toggle thumbnail view
 async function toggleThumbnailView() {
     if (viewMode === 'image') {
@@ -524,6 +542,8 @@ listen('menu-command', (event) => {
         actualSize,
         applyFitZoom,
         toggleThumbnailView,
+        openFile,
+        openFolder,
     });
 });
 
