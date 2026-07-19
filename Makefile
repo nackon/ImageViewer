@@ -2,7 +2,7 @@ APP_NAME := ImageViewer
 BUNDLE_DIR := src-tauri/target/release/bundle
 DEBUG_BUNDLE_DIR := src-tauri/target/debug/bundle
 APP_BUNDLE := $(BUNDLE_DIR)/macos/$(APP_NAME).app
-DMG_FILE := $(firstword $(wildcard $(BUNDLE_DIR)/dmg/*.dmg))
+DMG_FILE = $(firstword $(wildcard $(BUNDLE_DIR)/dmg/*.dmg))
 
 .PHONY: help install-deps build release run test dmg open-app open-dmg clean generate-test-images
 
@@ -17,7 +17,7 @@ help:
 	@echo "  make open-app              .appバンドルを開く"
 	@echo "  make open-dmg              DMGファイルをマウント"
 	@echo "  make clean                 ビルド成果物をクリーン"
-	@echo "  make generate-test-images  テスト用画像を生成"
+	@echo "  make generate-test-images  テスト用画像を生成（generate_test_images バイナリが必要）"
 
 install-deps:
 	@command -v cargo >/dev/null 2>&1 || { echo "Rust (cargo) が見つかりません。https://rustup.rs/ からインストールしてください"; exit 1; }
@@ -28,7 +28,7 @@ build:
 	npm run tauri -- build --debug
 
 release:
-	npm run build
+	npm run tauri -- build
 
 run:
 	npm run tauri:dev

@@ -110,7 +110,7 @@ make run
 ### リリースビルド
 
 ```bash
-npm run build
+npm run tauri -- build
 # または
 make release
 ```
