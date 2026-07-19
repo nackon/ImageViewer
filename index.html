@@ -201,6 +201,66 @@
         .hidden {
             display: none;
         }
+
+        #shortcuts-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        #shortcuts-panel {
+            background: var(--bar-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            max-width: 480px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        #shortcuts-panel h2 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #shortcuts-close {
+            cursor: pointer;
+            color: var(--muted);
+            font-size: 14px;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+
+        #shortcuts-close:hover {
+            color: var(--fg);
+        }
+
+        #shortcuts-list {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            column-gap: 16px;
+            row-gap: 8px;
+            font-size: 13px;
+        }
+
+        #shortcuts-list dt {
+            color: var(--accent);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        #shortcuts-list dd {
+            color: var(--fg);
+        }
     </style>
 </head>
 <body>
@@ -214,7 +274,7 @@
         <div id="image-container">
             <div id="drop-zone">
                 <div>Drop an image or folder here or click to open</div>
-                <div style="font-size: 14px; color: var(--muted);">Keyboard: ← → Space N P | T: Thumbnails | D: Theme | Q: Quit</div>
+                <div style="font-size: 14px; color: var(--muted);">Keyboard: ← → Space N P | T: Thumbnails | D: Theme | ?: Help | Q: Quit</div>
             </div>
             <div id="image-wrapper">
                 <img id="image" />
@@ -232,6 +292,16 @@
         <span id="zoom-level" class="hidden">Zoom: 100%</span>
         <span id="thumbnail-hint" class="hidden">[T] Thumbnails</span>
         <span id="thumbnail-footer" class="hidden">Use ↑↓←→ to navigate, Enter to view</span>
+    </div>
+
+    <div id="shortcuts-overlay" class="hidden">
+        <div id="shortcuts-panel">
+            <h2>
+                Keyboard Shortcuts
+                <button id="shortcuts-close" type="button" data-shortcuts-close>Close (Esc)</button>
+            </h2>
+            <dl id="shortcuts-list"></dl>
+        </div>
     </div>
 
     <script type="module" src="/src/main.js"></script>
