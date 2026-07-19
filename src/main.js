@@ -249,6 +249,9 @@ async function openFile() {
 
         console.log('Selected file:', selected);
         if (selected) {
+            if (viewMode !== 'image') {
+                await toggleThumbnailView();
+            }
             await loadImage(selected);
         }
     } catch (error) {
@@ -266,6 +269,9 @@ async function openFolder() {
         if (selected) {
             const images = await invoke('list_directory_images', { dir: selected });
             if (images && images.length > 0) {
+                if (viewMode !== 'image') {
+                    await toggleThumbnailView();
+                }
                 await loadImage(images[0]);
             } else {
                 filenameEl.textContent = 'No images found in folder';

@@ -662,9 +662,19 @@ mod tests {
     #[test]
     fn test_list_directory_images_returns_sorted_paths() {
         use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
 
-        let temp_dir =
-            std::env::temp_dir().join(format!("image_viewer_test_list_dir_{}", std::process::id()));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!(
+            "image_viewer_test_list_dir_{}_{}",
+            std::process::id(),
+            unique
+        ));
+        // Guard against a leftover directory from a previous crashed run.
+        let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
         fs::write(temp_dir.join("b.png"), b"fake png").unwrap();
@@ -682,8 +692,18 @@ mod tests {
 
     #[test]
     fn test_list_directory_images_missing_directory_errors() {
-        let missing_dir =
-            std::env::temp_dir().join(format!("image_viewer_test_missing_{}", std::process::id()));
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let missing_dir = std::env::temp_dir().join(format!(
+            "image_viewer_test_missing_{}_{}",
+            std::process::id(),
+            unique
+        ));
+        assert!(!missing_dir.exists());
 
         assert!(list_directory_images(missing_dir.to_string_lossy().to_string()).is_err());
     }
