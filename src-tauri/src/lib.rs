@@ -40,7 +40,7 @@ fn is_image_file(path: &Path) -> bool {
         .map(|ext| {
             matches!(
                 ext.to_lowercase().as_str(),
-                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "tiff" | "tif"
             )
         })
         .unwrap_or(false)
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_image_extension_filter() {
-        let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp"];
+        let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif"];
         for ext in valid_extensions {
             let path = PathBuf::from(format!("/test/image.{}", ext));
             assert!(is_image_file(&path));
@@ -570,6 +570,9 @@ mod tests {
         assert!(is_image_file(&PathBuf::from("/test/image.gif")));
         assert!(is_image_file(&PathBuf::from("/test/image.bmp")));
         assert!(is_image_file(&PathBuf::from("/test/image.webp")));
+        assert!(is_image_file(&PathBuf::from("/test/image.tiff")));
+        assert!(is_image_file(&PathBuf::from("/test/image.tif")));
+        assert!(is_image_file(&PathBuf::from("/test/image.TIFF")));
 
         // Invalid extensions
         assert!(!is_image_file(&PathBuf::from("/test/file.txt")));
@@ -679,6 +682,26 @@ mod tests {
 
         let result = resolve_initial_path(&temp_dir);
         assert!(result.is_err());
+
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_resolve_initial_path_directory_with_only_tiff_images() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "image_viewer_test_resolve_tiff_dir_{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        fs::write(temp_dir.join("a_image.tiff"), b"fake tiff").unwrap();
+        fs::write(temp_dir.join("b_image.tif"), b"fake tif").unwrap();
+
+        let resolved = resolve_initial_path(&temp_dir).unwrap();
+
+        assert_eq!(resolved, temp_dir.join("a_image.tiff"));
 
         fs::remove_dir_all(&temp_dir).unwrap();
     }
