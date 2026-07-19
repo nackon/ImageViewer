@@ -36,10 +36,10 @@ jobs:
           cache: 'npm'
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: make setup
 
       - name: Run tests
-        run: cd src-tauri && cargo test --verbose
+        run: make test
 
   format:
     name: Format Check
@@ -53,7 +53,7 @@ jobs:
           components: rustfmt
 
       - name: Check formatting
-        run: cd src-tauri && cargo fmt -- --check
+        run: make fmt
 
   clippy:
     name: Clippy
@@ -83,10 +83,10 @@ jobs:
           cache: 'npm'
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: make setup
 
       - name: Run clippy
-        run: cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
+        run: make clippy
 
   build:
     name: Build
@@ -114,10 +114,10 @@ jobs:
           cache: 'npm'
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: make setup
 
       - name: Build Tauri app
-        run: npm run build
+        run: make build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
