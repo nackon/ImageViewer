@@ -69,11 +69,11 @@ darkModeQuery.addEventListener('change', applyTheme);
 // Shortcuts help overlay
 function renderShortcutsHelp() {
     shortcutsList.innerHTML = '';
-    for (const { keys, description } of shortcutsForContext(viewMode)) {
+    for (const shortcut of shortcutsForContext(viewMode)) {
         const dt = document.createElement('dt');
-        dt.textContent = keys;
+        dt.textContent = shortcut.keys;
         const dd = document.createElement('dd');
-        dd.textContent = description;
+        dd.textContent = shortcut.description;
         shortcutsList.appendChild(dt);
         shortcutsList.appendChild(dd);
     }
@@ -396,6 +396,7 @@ document.addEventListener('keydown', async (e) => {
         return;
     }
     if (shortcutsHelpVisible) {
+        e.preventDefault();
         return;
     }
 

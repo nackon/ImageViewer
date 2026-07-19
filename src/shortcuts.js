@@ -12,19 +12,21 @@ export const SHORTCUTS = [
   { keys: '-', description: 'Zoom out', context: 'image' },
   { keys: '0', description: 'Actual size (100%)', context: 'image' },
   { keys: 'W', description: 'Fit to window', context: 'image' },
+  { keys: 'Esc', description: 'Exit fullscreen, or quit', context: 'image' },
   { keys: '↑ ↓ ← →', description: 'Move thumbnail selection', context: 'thumbnail' },
   { keys: 'Enter', description: 'Open selected thumbnail', context: 'thumbnail' },
+  { keys: 'Esc', description: 'Back to image view', context: 'thumbnail' },
   { keys: 'T', description: 'Toggle thumbnail view', context: 'global' },
   { keys: 'F', description: 'Toggle fullscreen', context: 'global' },
   { keys: 'D', description: 'Cycle theme', context: 'global' },
-  { keys: 'Esc', description: 'Close this help, exit fullscreen, or go back', context: 'global' },
   { keys: 'Q', description: 'Quit', context: 'global' },
   { keys: '?', description: 'Show / hide this shortcut list', context: 'global' },
 ];
 
 /**
  * Shortcuts relevant to a given view, including the ones shared by both views.
- * @param {'image' | 'thumbnail'} context
+ * An unrecognized context returns only the global shortcuts.
+ * @param {string} context - 'image', 'thumbnail', or any other value
  * @returns {typeof SHORTCUTS}
  */
 export function shortcutsForContext(context) {
